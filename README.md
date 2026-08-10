@@ -4,6 +4,22 @@ Play Galaga, Pac-Man, Donkey Kong, Frogger, Digdug and 1942 on the ESP32
 
 ![Cabinet](images/galagino_cabinet.jpg)
 
+## New and improved versions
+
+Since Galagino was started in 2023 many developers have updated
+and improved this project and these successors have long left this
+original Galagino behind.
+
+I recommend you to check the following versions as well:
+
+  * [GalaginoPlus](https://github.com/VirtualClaudioBoy/GalaginoPlus) featuring an impressive 43 games and most other third party contributions
+  * [Speckhpoilers Galagino](https://github.com/speckhoiler/galagino) increasing the number of supported games to 30!!
+  * [Galagino3](https://github.com/SurvivalHacking/galagino3) adding several new games, supporting an OLED for the marquee and enhancing joystick support as well as adding new games
+  * [Another Galagino](https://github.com/galagino/galagino) adding new games and support for more display types
+  * ... and various other great ports and contributions ...
+
+## Original Galagino from 2023
+
 ![Pac-Man screenshot](images/pacman.gif)
 ![Galaga screencast](images/galagino.gif)
 ![Donkey Kong screenshot](images/dkong.gif)
