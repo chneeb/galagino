@@ -10,7 +10,7 @@ Since Galagino was started in 2023 many developers have updated
 and improved this project and these successors have long left this
 original Galagino behind.
 
-I recommend you to check the following versions as well:
+I recommend you check the following versions as well:
 
   * [GalaginoPlus](https://github.com/VirtualClaudioBoy/GalaginoPlus) featuring an impressive 43 games and most other third party contributions
   * [Speckhoilers Galagino](https://github.com/speckhoiler/galagino) increasing the number of supported games to 30!!
