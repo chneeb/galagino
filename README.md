@@ -13,7 +13,7 @@ original Galagino behind.
 I recommend you to check the following versions as well:
 
   * [GalaginoPlus](https://github.com/VirtualClaudioBoy/GalaginoPlus) featuring an impressive 43 games and most other third party contributions
-  * [Speckhpoilers Galagino](https://github.com/speckhoiler/galagino) increasing the number of supported games to 30!!
+  * [Speckhoilers Galagino](https://github.com/speckhoiler/galagino) increasing the number of supported games to 30!!
   * [Galagino3](https://github.com/SurvivalHacking/galagino3) adding several new games, supporting an OLED for the marquee and enhancing joystick support as well as adding new games
   * [Another Galagino](https://github.com/galagino/galagino) adding new games and support for more display types
   * ... and various other great ports and contributions ...
