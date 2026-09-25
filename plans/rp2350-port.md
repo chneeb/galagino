@@ -264,7 +264,7 @@ The three-CPU question from §5 is answered for Galaga; Digdug is similar but po
 | Machine | `emulate_frame()` µs @150 | @300 | `update_screen()` µs @300 | Video rate |
 |---|---|---|---|---|
 | Pac-Man | — | 1,726 (max 1,964) | 14,061 (max 14,187) | **60.6 Hz** (122 frames / 2 s) |
-| Donkey Kong | | | | |
+| Donkey Kong | — | ~4,600–5,300 (max 6,690) | ~14,000 (max 14,143); row max 249 | **60 Hz** |
 | Frogger | | | | |
 | 1942 | | | | |
 | Galaga | — | ~6,400–7,100 (max 7,662) | ~14,090 (max 14,184); row max 184 | **60 Hz** |
