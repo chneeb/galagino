@@ -42,12 +42,14 @@ mode). Pressing any key in the menu stops that.
 USB serial (`picocom /dev/ttyACM0` or similar) prints every 2 s:
 
 ```
-machine 2: video 60Hz avg … max … us, row max … us | emu avg … max … us | budget 16500 us
+machine 2: video 60Hz avg … max … us, row max … us | draw avg … max … us | emu avg … max … us | budget 16500 us
 ```
 
 - `machine`: 0 = menu, then games in menu order (1 = Pac-Man … 6 = 1942)
 - `video`: time per screen update, excluding the pacing sleep. The transfer alone takes ~13.8 ms.
 - `row max`: slowest tile-row render. Above ~380 us it no longer hides behind the DMA.
+- `draw`: CPU time to draw a whole frame (sprite prep + 36 rows), without the LCD waits. Here it
+  overlaps the transfer; a DVI port would spend it on the emulation core.
 - `emu`: CPU emulation time per 60 Hz frame on core 1
 
 If 60 Hz video misses its budget for more than 10 frames in a row, that game

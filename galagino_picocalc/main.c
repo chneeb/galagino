@@ -71,6 +71,10 @@ static unsigned short row_buffer[2][224*8];
 static volatile uint32_t emu_us_max = 0, emu_us_sum = 0, emu_frames = 0;
 static uint32_t video_us_max = 0, video_us_sum = 0, video_frames = 0;
 static uint32_t row_us_max = 0;
+// CPU time spent drawing a frame (sprite prep + all 36 rows), without
+// waiting for the LCD. It hides behind the transfer here, but a DVI port
+// would have to spend it on the same core as the emulation.
+static uint32_t draw_us_frame = 0, draw_us_max = 0, draw_us_sum = 0;
 
 /* --------------------------- core 0 <-> core 1 -------------------------- */
 
@@ -397,6 +401,7 @@ static void send_rows(int first, int last) {
     render_line(row);
     t = time_us_32() - t;
     if(t > row_us_max) row_us_max = t;
+    draw_us_frame += t;
     lcd_write(frame_buffer, sizeof(row_buffer[0]));
   }
 }
@@ -414,6 +419,7 @@ static void update_screen(void) {
   uint32_t t0 = time_us_32();
 
   prepare_frame();
+  draw_us_frame = time_us_32() - t0;
 
   lcd_begin(TFT_X_OFFSET, TFT_Y_OFFSET, 224, 288);
   if(half_rate) {
@@ -438,6 +444,9 @@ static void update_screen(void) {
   video_us_sum += us;
   if(us > video_us_max) video_us_max = us;
   video_frames++;
+
+  draw_us_sum += draw_us_frame;
+  if(draw_us_frame > draw_us_max) draw_us_max = draw_us_frame;
 
   if(!half_rate) {
     // deadline is re-based on this frame's start, so lateness never carries over
@@ -472,7 +481,7 @@ static void print_stats(void) {
   last = now;
 
   uint32_t ef = emu_frames;
-  printf("machine %d: video %s avg %lu max %lu us, row max %lu us | emu avg %lu max %lu us | budget %u us\n",
+  printf("machine %d: video %s avg %lu max %lu us, row max %lu us | draw avg %lu max %lu us | emu avg %lu max %lu us | budget %u us\n",
 #ifndef SINGLE_MACHINE
          machine,
 #else
@@ -480,9 +489,11 @@ static void print_stats(void) {
 #endif
          half_rate ? "30Hz" : "60Hz",
          video_frames ? video_us_sum / video_frames : 0, video_us_max, row_us_max,
+         video_frames ? draw_us_sum / video_frames : 0, draw_us_max,
          ef ? emu_us_sum / ef : 0, emu_us_max, FRAME_US);
 
   video_us_sum = video_us_max = video_frames = row_us_max = 0;
+  draw_us_sum = draw_us_max = 0;
   emu_us_sum = emu_us_max = emu_frames = 0;
 }
 
