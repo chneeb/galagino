@@ -27,6 +27,7 @@
 #define KEY_DOWN      0xb6
 #define KEY_RIGHT     0xb7
 #define KEY_ENTER     0x0a
+#define KEY_ESC       0xb1
 
 static volatile unsigned char buttons = 0;
 static bool request_pending = false;
@@ -52,6 +53,7 @@ static unsigned char key_to_button(int key) {
     case KEY_ENTER: return BUTTON_START;
     case '5':
     case 'c':       return BUTTON_COIN;
+    case KEY_ESC:   return BUTTON_EXTRA;   // hold to return to the menu
   }
   return 0;
 }

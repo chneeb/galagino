@@ -255,7 +255,11 @@ Measured on hardware at 300 MHz, 75 MHz LCD. `update_screen()` includes the keyb
 I2C transfers) but not the pacing sleep. Pac-Man (2026-09-25): video is **bus-bound**. 14.06 ms
 against a theoretical 13.76 ms transfer means row rendering hides completely behind the DMA.
 Emulation of one Z80 takes ~1.7 ms, ~10% of the frame. The ESP32 comment in `emulation.c` puts
-Galaga's three Z80s at ~13 ms on ESP32, which suggests the RP2350 at 300 MHz is ~2.5x faster per core.
+Galaga's three Z80s at ~13 ms on ESP32.
+
+Galaga (2026-09-25): three Z80s in **~7 ms** (max 7.7 ms), i.e. ~45% of the frame. That's ~1.8x the
+ESP32. Row render max ~180 us, half the ~382 us DMA time per row, so video stays bus-bound at 60 Hz.
+The three-CPU question from §5 is answered for Galaga; Digdug is similar but polls the Namco I/O chip more.
 
 | Machine | `emulate_frame()` µs @150 | @300 | `update_screen()` µs @300 | Video rate |
 |---|---|---|---|---|
@@ -263,7 +267,7 @@ Galaga's three Z80s at ~13 ms on ESP32, which suggests the RP2350 at 300 MHz is 
 | Donkey Kong | | | | |
 | Frogger | | | | |
 | 1942 | | | | |
-| Galaga | | | | |
+| Galaga | — | ~6,400–7,100 (max 7,662) | ~14,090 (max 14,184); row max 184 | **60 Hz** |
 | Digdug | | | | |
 
 ## Checklist

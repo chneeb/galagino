@@ -7,9 +7,30 @@
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 
-// Pac-Man only for now
+// disable e.g. if roms are missing
 #define ENABLE_PACMAN
-#define SINGLE_MACHINE
+#define ENABLE_GALAGA
+#define ENABLE_DKONG
+#define ENABLE_FROGGER
+#define ENABLE_DIGDUG
+#define ENABLE_1942
+
+#if !defined(ENABLE_PACMAN) && !defined(ENABLE_GALAGA) && !defined(ENABLE_DKONG) && !defined(ENABLE_FROGGER) && !defined(ENABLE_DIGDUG) && !defined(ENABLE_1942)
+#error "At least one machine has to be enabled!"
+#endif
+
+// check if only one machine is enabled (same test as upstream config.h)
+#if (( defined(ENABLE_PACMAN) && !defined(ENABLE_GALAGA) && !defined(ENABLE_DKONG) && !defined(ENABLE_FROGGER) && !defined(ENABLE_DIGDUG) && !defined(ENABLE_1942)) || \
+     (!defined(ENABLE_PACMAN) &&  defined(ENABLE_GALAGA) && !defined(ENABLE_DKONG) && !defined(ENABLE_FROGGER) && !defined(ENABLE_DIGDUG) && !defined(ENABLE_1942)) || \
+     (!defined(ENABLE_PACMAN) && !defined(ENABLE_GALAGA) &&  defined(ENABLE_DKONG) && !defined(ENABLE_FROGGER) && !defined(ENABLE_DIGDUG) && !defined(ENABLE_1942)) || \
+     (!defined(ENABLE_PACMAN) && !defined(ENABLE_GALAGA) && !defined(ENABLE_DKONG) &&  defined(ENABLE_FROGGER) && !defined(ENABLE_DIGDUG) && !defined(ENABLE_1942)) || \
+     (!defined(ENABLE_PACMAN) && !defined(ENABLE_GALAGA) && !defined(ENABLE_DKONG) && !defined(ENABLE_FROGGER) &&  defined(ENABLE_DIGDUG) && !defined(ENABLE_1942)) || \
+     (!defined(ENABLE_PACMAN) && !defined(ENABLE_GALAGA) && !defined(ENABLE_DKONG) && !defined(ENABLE_FROGGER) && !defined(ENABLE_DIGDUG) &&  defined(ENABLE_1942)))
+  #define SINGLE_MACHINE
+#endif
+
+// start games randomly while sitting idle in menu for 20 seconds, undefine to disable
+#define MASTER_ATTRACT_MENU_TIMEOUT  20000
 
 #include "dip_switches.h"
 
@@ -26,13 +47,15 @@
 // 300 MHz / 2 / 75 MHz = 2.0
 #define LCD_SPI_HZ    75000000
 
-// Pac-Man's vblank runs at 60.61 Hz
+// 60 Hz emulation frame. Pac-Man's real vblank is 60.61 Hz (16.5 ms).
 #define FRAME_US      16500
 
-// Define to update the LCD at 30 Hz while emulating at 60 Hz, like the CYD.
+// Video runs at 60 Hz and drops to 30 Hz (still emulating at 60 Hz, like
+// the CYD) for the rest of a game session once it can't keep up.
+// Define to force 30 Hz for every game.
 // #define VIDEO_HALF_RATE
 
 // Show colour bars for a moment at boot to check LCD byte order
-#define SHOW_TEST_PATTERN
+// #define SHOW_TEST_PATTERN
 
 #endif // _CONFIG_H_

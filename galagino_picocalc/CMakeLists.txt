@@ -28,6 +28,7 @@ add_executable(galagino_picocalc
     kbd.c
     audio.c
     ${GALAGINO}/Z80.c
+    ${GALAGINO}/i8048.c
     ${GALAGINO}/emulation.c
 )
 
@@ -60,6 +61,8 @@ target_link_libraries(galagino_picocalc PRIVATE
     hardware_i2c
     hardware_vreg
     hardware_clocks
+    hardware_watchdog
+    pico_rand
 )
 
 pico_enable_stdio_usb(galagino_picocalc 1)

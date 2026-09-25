@@ -20,6 +20,7 @@
 
 static audio_fill_fn fill_fn;
 static uint slice;
+static int timer;
 static int dma_ch[2];
 // one 32 bit word per sample: channel A duty in the low half, B in the high
 static uint32_t buffer[2][AUDIO_SAMPLES];
@@ -54,9 +55,9 @@ void audio_init(audio_fill_fn fill) {
   pwm_init(slice, &pc, true);
   pwm_set_both_levels(slice, AUDIO_RANGE/2, AUDIO_RANGE/2);
 
-  // DMA timer at exactly AUDIO_RATE: 300 MHz / 12500 = 24 kHz
-  int timer = dma_claim_unused_timer(true);
-  dma_timer_set_fraction(timer, 1, clock_get_hz(clk_sys) / AUDIO_RATE);
+  // DMA timer: 300 MHz / 12500 = 24 kHz exactly
+  timer = dma_claim_unused_timer(true);
+  audio_set_rate(AUDIO_RATE);
 
   refill(0);
   refill(1);
@@ -80,4 +81,9 @@ void audio_init(audio_fill_fn fill) {
   irq_set_enabled(DMA_IRQ_1, true);
 
   dma_channel_start(dma_ch[0]);
+}
+
+void audio_set_rate(unsigned rate) {
+  // 300 MHz / 25500 = 11764.7 Hz, which is exactly Donkey Kong's rate
+  dma_timer_set_fraction(timer, 1, (clock_get_hz(clk_sys) + rate/2) / rate);
 }

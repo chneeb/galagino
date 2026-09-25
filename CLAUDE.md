@@ -64,7 +64,11 @@ there is no separate coin button (start doubles as coin).
 
 Two plans exist. **`galagino_picocalc/`** holds the start of the PicoCalc port: a Pac-Man-only
 pico-sdk build that compiles the unchanged `../galagino` emulation sources. See its README for
-build, flash and keys. **Pac-Man works on the PicoCalc hardware (2026-09-25):** correct colours, keyboard (coin with `c`), sound. Timing numbers not yet recorded.
+build, flash and keys. **Pac-Man works on the PicoCalc hardware (2026-09-25):** 60.6 Hz, video 14.06 ms/frame, emulation
+1.7 ms/frame. The **six-game build** (menu, all sound paths, auto 30 Hz fallback, per-row timing)
+runs on hardware. **Galaga verified at 60 Hz** (emulation ~7 ms, row render max ~180 us). DK, Frogger, Digdug and 1942 are still untested. `main.c` is a C port of `galagino.ino`. Fixes over upstream:
+the Namco wavetable pick is a real if/else chain, and the DK audio read pointer only advances
+when a buffer is queued.
 
 - `plans/rp2350-port.md` — **ClockworkPi PicoCalc** (Pico 2 / RP2350, built-in 320×320 SPI panel).
   This is the preferred target.

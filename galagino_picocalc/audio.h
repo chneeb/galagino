@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define AUDIO_RATE     24000
+#define AUDIO_RATE     24000   // default rate
 #define AUDIO_SAMPLES  128     // per buffer, ~5.3 ms at 24 kHz
 #define AUDIO_RANGE    1024    // PWM steps; silence is AUDIO_RANGE/2
 
@@ -12,5 +12,8 @@
 typedef void (*audio_fill_fn)(uint16_t *dst, int n);
 
 void audio_init(audio_fill_fn fill);
+
+// change the sample rate on the fly (Donkey Kong runs at 11765 Hz)
+void audio_set_rate(unsigned rate);
 
 #endif // _AUDIO_H_
