@@ -297,7 +297,7 @@ with emulation at a fixed 252 MHz (x1.19 of these 300 MHz numbers).
 | Pac-Man | | | |
 | Donkey Kong | | | |
 | Frogger | | | |
-| Digdug | | | |
+| Digdug | ~5.7 / 6.3 ms (playfield layer) | ~16.3 avg, ~17.4 max | **no, borderline; 30 Hz video fits** (2 emu + 1 draw ≈ 26–27 of 33 ms) |
 | 1942 | | | |
 
 Not included: sound synthesis on core 0 and bus contention from DVI scanout.
