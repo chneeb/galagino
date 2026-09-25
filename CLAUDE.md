@@ -66,7 +66,7 @@ Two plans exist. **`galagino_picocalc/`** holds the start of the PicoCalc port: 
 pico-sdk build that compiles the unchanged `../galagino` emulation sources. See its README for
 build, flash and keys. **Pac-Man works on the PicoCalc hardware (2026-09-25):** 60.6 Hz, video 14.06 ms/frame, emulation
 1.7 ms/frame. The **six-game build** (menu, all sound paths, auto 30 Hz fallback, per-row timing)
-runs on hardware. **All six machines verified at 60 Hz with sound** (2026-09-25); numbers in the plan's benchmark table. The worst frame is 14.7 ms (1942) of 16.5 ms. The DMA takes ~382 us per row; Digdug, 1942 and the menu render some rows slower than that but stay in budget. 1942 audio is halved because two AYs clipped the +/- 512 PWM range. Upstream AY code ignores envelopes. `main.c` is a C port of `galagino.ino`. Fixes over upstream:
+runs on hardware. **All six machines verified at 60 Hz with sound** (2026-09-25); numbers in the plan's benchmark table. The worst frame is 14.7 ms (1942) of 16.5 ms. The DMA takes ~382 us per row; Digdug, 1942 and the menu render some rows slower than that but stay in budget. 1942 audio uses upstream's AY_VOL 4, since two AYs at the old 10 clipped. Upstream AY code ignores envelopes. `main.c` is a C port of `galagino.ino`. Fixes over upstream:
 the Namco wavetable pick is a real if/else chain, and the DK audio read pointer only advances
 when a buffer is queued.
 

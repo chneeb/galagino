@@ -271,8 +271,8 @@ row. Both are within budget; optimise only if a future game needs the room.
 **All six machines run at 60 Hz video and full-speed emulation at 300 MHz**; the 30 Hz fallback
 never triggered. Worst frame of any game: 14.7 ms of 16.5 ms.
 
-Sound: 1942's two AYs peak at +/- 990, beyond the +/- 512 PWM range, and clipped when loud. It is
-now halved for 1942. Upstream's AY code also ignores envelopes (volume bit 4, regs 11-13), a
+Sound: 1942's two AYs peak at +/- 990, beyond the +/- 512 PWM range, and clipped when loud. Upstream
+has since fixed this (AY_VOL 10 -> 4); the port now uses the same value. Upstream's AY code also ignores envelopes (volume bit 4, regs 11-13), a
 remaining upstream limitation.
 
 | Machine | `emulate_frame()` µs @150 | @300 | `update_screen()` µs @300 | Video rate |

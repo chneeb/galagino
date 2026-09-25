@@ -23,7 +23,7 @@
 #include "hardware/watchdog.h"
 
 #include "Z80.h"      // also pulls in config.h (ours) and emulation.h
-#include "leds.h"     // only struct sprite_S, as LED_PIN is not defined
+#include "leds.h"     // struct sprite_S and no-op LED stubs, as LED_PIN is not defined
 
 #include "lcd.h"
 #include "kbd.h"
@@ -37,9 +37,6 @@ struct sprite_S sprite[128];
 
 // the row currently being rendered: 8 lines of 224 pixels
 unsigned short *frame_buffer;
-
-// galaga.h calls this unconditionally; LEDs aren't supported here
-static inline void leds_state_reset(void) { }
 
 #include "tileaddr.h"
 
@@ -630,12 +627,12 @@ static void snd_render_buffer(uint16_t *dst) {
     #ifndef ENABLE_FROGGER   // only 1942
       #define AY      2      // 1942 has two AYs
       #define AY_INC  8      // and they runs at 1.5 MHz -> 187500/24000 = 7,81
-      #define AY_VOL 10      // min/max = -/+ 6*15*11 = -/+ 990
+      #define AY_VOL  4      // min/max = -/+ 6*15*4 = -/+ 360 (upstream fix)
     #else
       // both enabled
       #define AY ((machine == MCH_FROGGER)?1:2)
       #define AY_INC ((machine == MCH_FROGGER)?9:8)
-      #define AY_VOL ((machine == MCH_FROGGER)?11:10)
+      #define AY_VOL ((machine == MCH_FROGGER)?11:4)
     #endif
   #endif
 
@@ -763,11 +760,6 @@ DKONG_END
           }
         }
       }
-#ifdef ENABLE_1942
-      // two AYs peak at +/- 990 (upstream comment above), beyond the
-      // +/- 512 PWM range, which clipped whenever several channels were loud
-      if(MACHINE_IS_1942) v /= 2;
-#endif
     }
 #endif
 
