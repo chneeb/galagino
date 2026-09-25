@@ -284,6 +284,24 @@ remaining upstream limitation.
 | Galaga | — | ~6,400–7,100 (max 7,662) | ~14,090 (max 14,184); row max 184 | **60 Hz** |
 | Digdug | — | ~7,100–8,200 (max 8,608) | ~14,200 (max 14,314); row max 517 | **60 Hz** |
 
+### Draw time per frame (for a DVI port)
+
+`draw` in the serial stats is the CPU time for sprite prep plus all 36 rows, excluding LCD waits.
+On the PicoCalc it hides behind the transfer. On an RP2350-PiZero DVI build it would share core 0
+with emulation at a fixed 252 MHz (x1.19 of these 300 MHz numbers).
+
+| Machine | draw avg / max (300 MHz) | emu + draw at 252 MHz (est.) | DVI 60 Hz? |
+|---|---|---|---|
+| Menu | 8.2 / 8.3 ms (RLE logo re-decode) | ~9.9 ms (emulation idle) | yes |
+| Galaga | ~0.9 / 1.2 ms | ~9.3 avg, ~10 max | **yes, ~6 ms headroom** |
+| Pac-Man | | | |
+| Donkey Kong | | | |
+| Frogger | | | |
+| Digdug | | | |
+| 1942 | | | |
+
+Not included: sound synthesis on core 0 and bus contention from DVI scanout.
+
 ## Checklist
 
 - [x] Plan authored; retargeted to the PicoCalc 2026-09-25
