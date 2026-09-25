@@ -261,6 +261,12 @@ Galaga (2026-09-25): three Z80s in **~7 ms** (max 7.7 ms), i.e. ~45% of the fram
 ESP32. Row render max ~180 us, half the ~382 us DMA time per row, so video stays bus-bound at 60 Hz.
 The three-CPU question from §5 is answered for Galaga; Digdug is similar but polls the Namco I/O chip more.
 
+Digdug (2026-09-25): ~8 ms emulation (max 8.6 ms), full speed. galapico had to halve it at
+150 MHz. First game whose **row render (up to ~520 us) exceeds the ~382 us row DMA**, so drawing no
+longer fully hides behind the transfer. The frame still takes only 14.2 ms. The menu is worse (row max
+~790 us, frame max 15.2 ms) because `render_logo()` re-decodes the RLE logo from its start for every
+row. Both are within budget; optimise only if a future game needs the room.
+
 | Machine | `emulate_frame()` µs @150 | @300 | `update_screen()` µs @300 | Video rate |
 |---|---|---|---|---|
 | Pac-Man | — | 1,726 (max 1,964) | 14,061 (max 14,187) | **60.6 Hz** (122 frames / 2 s) |
@@ -268,7 +274,7 @@ The three-CPU question from §5 is answered for Galaga; Digdug is similar but po
 | Frogger | — | ~3,100 (max 3,399) | ~13,990 (max 14,150); row max 315 | **60 Hz** |
 | 1942 | | | | |
 | Galaga | — | ~6,400–7,100 (max 7,662) | ~14,090 (max 14,184); row max 184 | **60 Hz** |
-| Digdug | | | | |
+| Digdug | — | ~7,100–8,200 (max 8,608) | ~14,200 (max 14,314); row max 517 | **60 Hz** |
 
 ## Checklist
 

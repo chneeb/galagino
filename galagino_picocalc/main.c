@@ -79,9 +79,12 @@ static uint32_t row_us_max = 0;
 
 static semaphore_t vblank_sem;
 
+// start of the current emulated frame on core 1, 0 = not measuring
+static uint32_t emu_started = 0;
+
 // called by emulate_frame() on core 1 (via ulTaskNotifyTake in esp32_compat.h)
 void galagino_wait_vblank(void) {
-  static uint32_t started = 0;
+  uint32_t started = emu_started;
   uint32_t now = time_us_32();
   if(started) {
     uint32_t us = now - started;
@@ -90,7 +93,13 @@ void galagino_wait_vblank(void) {
     emu_frames++;
   }
   sem_acquire_blocking(&vblank_sem);
-  started = time_us_32();
+  emu_started = time_us_32();
+}
+
+// called by emulate_frame() instead while the game is still booting
+void galagino_idle(unsigned ms) {
+  sleep_ms(ms);
+  emu_started = 0;
 }
 
 static void core1_main(void) {

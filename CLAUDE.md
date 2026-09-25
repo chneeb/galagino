@@ -66,7 +66,7 @@ Two plans exist. **`galagino_picocalc/`** holds the start of the PicoCalc port: 
 pico-sdk build that compiles the unchanged `../galagino` emulation sources. See its README for
 build, flash and keys. **Pac-Man works on the PicoCalc hardware (2026-09-25):** 60.6 Hz, video 14.06 ms/frame, emulation
 1.7 ms/frame. The **six-game build** (menu, all sound paths, auto 30 Hz fallback, per-row timing)
-runs on hardware. **Galaga, Donkey Kong and Frogger verified at 60 Hz** (emulation ~7 / ~5 / ~3 ms, row render max ~180 / ~250 / ~315 us; the DMA takes ~382 us per row). Digdug and 1942 are still untested. `main.c` is a C port of `galagino.ino`. Fixes over upstream:
+runs on hardware. **Pac-Man, Galaga, Donkey Kong (incl. sound), Frogger and Digdug verified at 60 Hz**; numbers in the plan's benchmark table. The DMA takes ~382 us per row. Digdug (~520 us) and the menu (~790 us) exceed that but stay within the 16.5 ms frame. 1942 is still untested. `main.c` is a C port of `galagino.ino`. Fixes over upstream:
 the Namco wavetable pick is a real if/else chain, and the DK audio read pointer only advances
 when a buffer is queued.
 

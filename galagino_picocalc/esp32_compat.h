@@ -14,9 +14,12 @@ static inline unsigned long micros(void) { return time_us_32(); }
 static inline unsigned long millis(void) { return to_ms_since_boot(get_absolute_time()); }
 #define esp_random()  get_rand_32()
 
-// emulate_frame() blocks on the video task's notification once per frame
+// emulate_frame() blocks on the video task's notification once per frame.
+// While a game boots it sleeps 1 ms instead, which galagino_idle() also
+// uses to restart the emulation timing stats.
 void galagino_wait_vblank(void);
+void galagino_idle(unsigned ms);
 #define ulTaskNotifyTake(clear, timeout)  galagino_wait_vblank()
-#define vTaskDelay(ms)                    sleep_ms(ms)
+#define vTaskDelay(ms)                    galagino_idle(ms)
 
 #endif // _ESP32_COMPAT_H_
