@@ -1,0 +1,13 @@
+; lcd.pio - transmit-only SPI (mode 0) for the PicoCalc LCD
+;
+; Two SM cycles per bit, so SCK = SM clock / 2. Autopull 8 bits, MSB first.
+; While the FIFO is empty the SM stalls on "out" with SCK low.
+; Based on the PicoCalc driver in shapones (MIT).
+
+.program lcd_spi
+.side_set 1
+
+.wrap_target
+    out pins, 1   side 0
+    nop           side 1
+.wrap
