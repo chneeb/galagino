@@ -93,6 +93,11 @@ when a buffer is queued.
   on one core at 252 MHz fits 60 Hz for Galaga (~9.3 ms), 1942 (~11.2 ms) and the lighter games.
   Digdug (~16.3 ms avg, 17.4 max) needs 30 Hz video. Table in `plans/rp2350-port.md`. Remaining
   unknowns: 288-line geometry (undoubled DVI mode) and the TV's 5 V requirement.
+- **`pico_lib` DVI always doubles pixels horizontally** (320 source → 640 out) and hard-codes line
+  doubling (`line * 2` in the DMA IRQ). So a sharp, correctly shaped 1.5× (336×432) would need the
+  full-resolution encoder (in `tmds_encode.S`, but without C setup in `pico_lib`).
+  `pizero_dvi_proto/` patches line doubling into a runtime setting and measures core 1 load for
+  three layouts. **Awaiting hardware results.**
 - **Forks worth porting instead of upstream** (details in `plans/rp2350-port.md` §6):
   `VirtualClaudioBoy/GalaginoPlus` (48 games; 6502/6809/6803 cores; `machineBase` class per game;
   platform layer split into `emulation/{video,audio,input,nunchuck}.cpp`) and `speckhoiler/galagino`
