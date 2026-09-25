@@ -267,12 +267,20 @@ longer fully hides behind the transfer. The frame still takes only 14.2 ms. The 
 ~790 us, frame max 15.2 ms) because `render_logo()` re-decodes the RLE logo from its start for every
 row. Both are within budget; optimise only if a future game needs the room.
 
+1942 (2026-09-25): ~5–6.4 ms emulation, row render up to ~580 us, frame max 14.7 ms. 60 Hz.
+**All six machines run at 60 Hz video and full-speed emulation at 300 MHz**; the 30 Hz fallback
+never triggered. Worst frame of any game: 14.7 ms of 16.5 ms.
+
+Sound: 1942's two AYs peak at +/- 990, beyond the +/- 512 PWM range, and clipped when loud. It is
+now halved for 1942. Upstream's AY code also ignores envelopes (volume bit 4, regs 11-13), a
+remaining upstream limitation.
+
 | Machine | `emulate_frame()` µs @150 | @300 | `update_screen()` µs @300 | Video rate |
 |---|---|---|---|---|
 | Pac-Man | — | 1,726 (max 1,964) | 14,061 (max 14,187) | **60.6 Hz** (122 frames / 2 s) |
 | Donkey Kong | — | ~4,600–5,300 (max 6,690) | ~14,000 (max 14,143); row max 249 | **60 Hz** |
 | Frogger | — | ~3,100 (max 3,399) | ~13,990 (max 14,150); row max 315 | **60 Hz** |
-| 1942 | | | | |
+| 1942 | — | ~4,900–6,400 (max 7,521) | ~14,100 (max 14,672); row max 580 | **60 Hz** |
 | Galaga | — | ~6,400–7,100 (max 7,662) | ~14,090 (max 14,184); row max 184 | **60 Hz** |
 | Digdug | — | ~7,100–8,200 (max 8,608) | ~14,200 (max 14,314); row max 517 | **60 Hz** |
 
@@ -281,8 +289,8 @@ row. Both are within budget; optimise only if a future game needs the room.
 - [x] Plan authored; retargeted to the PicoCalc 2026-09-25
 - [x] Phase 1: Scaffold + display (PIO LCD, 300 MHz, flash clkdiv 4): Pac-Man verified on hardware 2026-09-25
 - [x] Phase 2: Input (keyboard): coin/start/arrows work; simultaneous keys not yet tested (Pac-Man has no fire)
-- [ ] Phase 3: Emulation on core 1 + **benchmark table**
+- [x] Phase 3: Emulation on core 1 + **benchmark table** (all six at 60 Hz, 2026-09-25)
 - [x] Phase 4: Audio (Namco WSG on GP26/27; other sound chips come with their games)
-- [ ] Phase 5: Remaining machines
-- [ ] Phase 6: Optimisation (if needed)
+- [x] Phase 5: Remaining machines (all six verified on hardware incl. sound)
+- [ ] Phase 6: Optimisation (not needed for the six; menu logo decode is the cheapest win)
 - [ ] Phase 7: Polish

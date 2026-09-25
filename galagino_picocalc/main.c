@@ -763,6 +763,11 @@ DKONG_END
           }
         }
       }
+#ifdef ENABLE_1942
+      // two AYs peak at +/- 990 (upstream comment above), beyond the
+      // +/- 512 PWM range, which clipped whenever several channels were loud
+      if(MACHINE_IS_1942) v /= 2;
+#endif
     }
 #endif
 
