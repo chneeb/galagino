@@ -89,6 +89,10 @@ when a buffer is queued.
 - **PicoCalc display:** drive it the shapones way (`~/Source/shapones/samples/v3/picocalc.cpp`):
   PIO0 SPI at 75 MHz (300 MHz sysclk / 4), `COLMOD 0x65` RGB565. A 224×288 frame takes ~13.8 ms,
   so 60 Hz fits. Not tiny_agi's `lcdspi` path, which uses 18-bit colour at 50 MHz (~31 ms/frame).
+- **DVI port feasibility on RP2350-PiZero, from measured PicoCalc numbers:** emulation plus drawing
+  on one core at 252 MHz fits 60 Hz for Galaga (~9.3 ms), 1942 (~11.2 ms) and the lighter games.
+  Digdug (~16.3 ms avg, 17.4 max) needs 30 Hz video. Table in `plans/rp2350-port.md`. Remaining
+  unknowns: 288-line geometry (undoubled DVI mode) and the TV's 5 V requirement.
 - **Forks worth porting instead of upstream** (details in `plans/rp2350-port.md` §6):
   `VirtualClaudioBoy/GalaginoPlus` (48 games; 6502/6809/6803 cores; `machineBase` class per game;
   platform layer split into `emulation/{video,audio,input,nunchuck}.cpp`) and `speckhoiler/galagino`

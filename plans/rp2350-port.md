@@ -294,13 +294,18 @@ with emulation at a fixed 252 MHz (x1.19 of these 300 MHz numbers).
 |---|---|---|---|
 | Menu | 8.2 / 8.3 ms (RLE logo re-decode) | ~9.9 ms (emulation idle) | yes |
 | Galaga | ~0.9 / 1.2 ms | ~9.3 avg, ~10 max | **yes, ~6 ms headroom** |
-| Pac-Man | | | |
-| Donkey Kong | | | |
-| Frogger | | | |
+| Pac-Man | not measured (light) | ~3–4 (est. from emu 1.7 ms) | yes (estimate) |
+| Donkey Kong | not measured (row max 250 us) | ~9–11 (est. from emu ~5 ms) | likely (estimate) |
+| Frogger | not measured (row max 315 us) | ~7–9 (est. from emu ~3 ms) | likely (estimate) |
 | Digdug | ~5.7 / 6.3 ms (playfield layer) | ~16.3 avg, ~17.4 max | **no, borderline; 30 Hz video fits** (2 emu + 1 draw ≈ 26–27 of 33 ms) |
-| 1942 | | | |
+| 1942 | ~3.3 / 4.2 ms | ~11.2 avg, ~13.3 max | **yes, ~3 ms headroom** |
 
 Not included: sound synthesis on core 0 and bus contention from DVI scanout.
+
+**Result (2026-09-25):** on an RP2350-PiZero DVI build, CPU time allows **five of six at 60 Hz video**.
+Digdug needs 30 Hz video with 60 Hz emulation, unless ROM-to-SRAM and playfield optimisations
+recover ~1 ms. The open risks are elsewhere: fitting 288 lines (undoubled 480-line DVI mode on
+core 1, untested) and the TV's 5 V pin-18 requirement.
 
 ## Checklist
 
