@@ -24,8 +24,10 @@
 // shape. Right in the game menu cycles through the values.
 #define DVI_BORDER 0
 
-// Shrink the 224x288 screen by dropping every 6th row and column (cheaper
-// for core 1, but thin lines can vanish) instead of combining them.
-// #define DVI_SCALE_NEAREST
+// The 224x288 screen is shrunk to 187x240 by dropping every 6th row and
+// column, so 1 pixel lines can vanish. DVI_SCALE_MAX combines them instead
+// (per channel max of the pixels each output pixel covers), but is parked:
+// too slow for core 1, it causes red flicker (missed lines).
+// #define DVI_SCALE_MAX
 
 #endif // _CONFIG_H_

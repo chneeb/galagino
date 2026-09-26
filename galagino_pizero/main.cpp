@@ -148,12 +148,15 @@ static inline uint16_t to555(uint16_t be) {
   return ((c >> 1) & 0x7fe0) | (c & 0x1f);
 }
 
-#ifndef DVI_SCALE_NEAREST
-// Shrinking by dropping rows and columns loses Galagino's 1 pixel lines (e.g.
-// Pac-Man's maze walls). Instead each output pixel takes the per channel
+#ifdef DVI_SCALE_MAX
+// DVI_SCALE_MAX (parked, off by default): shrinking by dropping rows and
+// columns loses Galagino's 1 pixel lines (e.g. Pac-Man's maze walls).
+// Instead each output pixel takes the per channel
 // maximum of the source pixels it covers: thin bright lines on the black
 // background stay fully visible. Pixels are unpacked to one byte per channel
 // so the M33's DSP instructions compute the maximum of all three at once.
+// Tested 2026-09-26: too slow for core 1 at 252 MHz, lots of red flicker
+// (missed DVI lines). Would need a cheaper formulation to be usable.
 
 // big endian RGB565 -> 0x00RRGGBB with 5 bit channels
 static inline uint32_t unpack(uint16_t be) {
@@ -201,7 +204,7 @@ static void __not_in_flash_func(core1_main)(void) {
     if(border != geo_border) set_geometry(border);
     const int first = geo_border, lines = geo_lines;
     const bool ov = overlay_on;
-#ifndef DVI_SCALE_NEAREST
+#ifdef DVI_SCALE_MAX
     unpacked_row[0] = unpacked_row[1] = -1;   // new frame, maybe another buffer
 #endif
 
@@ -214,7 +217,7 @@ static void __not_in_flash_func(core1_main)(void) {
       else {
         int ly = y - first;
         black(dst, geo_x);
-#ifdef DVI_SCALE_NEAREST
+#ifndef DVI_SCALE_MAX
         const uint16_t *src = screen[b][ya[ly]];
         for(int x=0;x<geo_w;x++) dst[geo_x + x] = to555(src[xa[x]]);
 #else

@@ -37,9 +37,11 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   Verified by disassembly: no call from core 1's per-line functions reaches flash.
 - **Red flicker gone** after the flash fix (confirmed).
 - **Bottom line / thin maze walls missing:** not overscan (the border made no difference). The
-  6:5 shrink dropped every 6th row and column, which removed 1-pixel lines. Replaced by the
-  max-combining scaler (untested; watch `CORE1 %` and `MISSED` in the diagnostics, estimated
-  ~70–80% busy).
+  6:5 shrink drops every 6th row and column, which removes 1-pixel lines. The max-combining scaler
+  fixed that in principle but caused **lots of red flicker** (core 1 too slow), so it's parked
+  behind `DVI_SCALE_MAX` and the dropping scaler stays the default. A later attempt would need a
+  cheaper formulation, e.g. combining only rows (not columns), a 16-bit-domain max, or moving
+  part of the work to core 0.
 - **Pac-Man timing (on screen):** emulation 2.7 ms (max 2.8), draw 3.2 ms, 60 Hz,
   core 1 35%, 0 missed lines. Emulation is a bit above the ~2.0 ms scaled from the PicoCalc;
   `GALAGINO_FAST_FLASH` may close that. The same pad works in `~/Source/circle-libretro`
@@ -51,12 +53,12 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
 
 ## How it works
 
-- **Video:** 640×480p60 at a fixed 252 MHz. The 224×288 arcade screen is shrunk to 187×240, and
-  `pico_lib` doubles that to 374×480. Each output pixel covers about 1.2×1.2 source pixels and
-  takes the **per-channel maximum** of the up to 2×2 source pixels it covers. That way no row or
-  column is dropped, and 1-pixel lines (e.g. Pac-Man's maze walls) stay fully bright; at most a
-  line looks one step thicker. Uses the M33's DSP `usub8`/`sel` on pixels unpacked to one byte
-  per channel. `DVI_SCALE_NEAREST` in `pizero_config.h` restores plain dropping. This layout was
+- **Video:** 640×480p60 at a fixed 252 MHz. The 224×288 arcade screen is shrunk to 187×240
+  (every 6th row and column dropped), and `pico_lib` doubles that to 374×480. Dropping can make
+  1-pixel lines vanish (e.g. some of Pac-Man's maze walls, the bottom line).
+  `DVI_SCALE_MAX` (parked, off) instead takes the per-channel maximum of the 2×2 source pixels
+  each output pixel covers (DSP `usub8`/`sel`). That keeps thin lines, but it's too slow for
+  core 1 at 252 MHz and causes red flicker. This layout was
   chosen with `../pizero_dvi_proto`; 480 unique lines didn't work. Two screen buffers, so no
   tearing.
 - **Core 0** emulates, then draws the whole screen into the back buffer, polls the pad and tops
