@@ -43,6 +43,10 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   cheaper formulation, e.g. combining only rows (not columns), a 16-bit-domain max, or moving
   part of the work to core 0. Alternating the dropped rows/columns per frame
   (`DVI_ALTERNATE_DROP`) is being tried instead (untested).
+- **SIO TMDS encoder** enabled (untested). Before: `CORE1 %` 35 with Pac-Man (interpolator
+  encoder). If it drops a lot, 480 unique lines become worth another try. Note: the direct 480
+  prototype's "blue shadow" was a bug, not a limit: it passed 320 as the line buffer size, where
+  pico_lib's encoder expects the full 640 (it encodes the first half, doubled).
 - **Pac-Man timing (on screen):** emulation 2.7 ms (max 2.8), draw 3.2 ms, 60 Hz,
   core 1 35%, 0 missed lines. Emulation is a bit above the ~2.0 ms scaled from the PicoCalc;
   `GALAGINO_FAST_FLASH` may close that. The same pad works in `~/Source/circle-libretro`
@@ -162,3 +166,6 @@ removed debug printfs). MIT, see `pico_lib/LICENSE`. Patched in `dvi/dvi.h` and 
 - `frameCounter_` is `volatile`, so core 0 can poll it for pacing
 - the data-island lambda in `updateDataPacket()` is now `prepareDataPacket()`, marked
   `__not_in_flash_func` (lambdas don't inherit it, so it ran from flash inside the DVI IRQ)
+- `encodeTMDSChannel16bpp()` uses the RP2350's **SIO TMDS encoder**
+  (`tmds_encode_sio_loop_poppop_ratio2`, set up as in PicoDVI's `tmds_encode.c`). pico_lib shipped
+  the assembly but always used the RP2040 interpolator path. `DVI_TMDS_INTERP` restores that.

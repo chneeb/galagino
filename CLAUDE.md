@@ -126,6 +126,10 @@ when a buffer is queued.
   (256 bytes) and the M0_TIMING literal (`0x40000204` = divider 4, RX delay 2).
 - **PicoCalc audio** is GP26 = left, GP27 = right, both on PWM slice 5 (ClockworkPi's MicroPython
   `boot.py` and PicoMite). The panel is an ST7365P (spec PDF in `~/Source/PicoCalc`).
+- **pico_lib never used the RP2350's SIO TMDS encoder** (asm present, C side always took the
+  RP2040 interpolator path); galagino_pizero now does, as PicoDVI does. `pico_lib`'s encoder
+  takes the *640* line buffer size and encodes its first 320 pixels doubled; passing 320 (as
+  `pizero_dvi_proto`'s direct variant did) misaligns the lanes (a blue "shadow").
 - **Core 1 on the PiZero must never fetch from flash**, code or data. Core 0 streaming the menu
   logos thrashes the 16 KB XIP cache, and any flash access on core 1's per-line path then misses
   DVI lines (red flicker). Watch for implicit calls: newlib `memset`/`memcpy` (GCC also turns fill

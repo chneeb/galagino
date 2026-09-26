@@ -7,6 +7,8 @@
 
 #include <pico.h>
 #include "hardware/interp.h"
+#include "hardware/structs/sio.h"
+#include "dvi_config_defs.h"
 #include <assert.h>
 
 #include <stdio.h>
@@ -16,6 +18,7 @@ extern "C"
     void tmds_encode_loop_16bpp(const uint32_t *pixbuf, uint32_t *symbuf, size_t n_pix);
     void tmds_encode_loop_16bpp_leftshift(const uint32_t *pixbuf, uint32_t *symbuf, size_t n_pix, uint32_t leftshift);
     void tmds_encode_loop_12bpp_scale16_7(const uint32_t *pixbuf, uint32_t *symbuf, size_t n_pix, uint32_t leftshift);
+    void tmds_encode_sio_loop_poppop_ratio2(const uint32_t *pixbuf, uint32_t *symbuf, size_t n_sym);
     
 #if PICO_RP2350
     #ifdef __riscv
@@ -86,9 +89,32 @@ namespace dvi
         };
     }
 
+// galagino: the RP2350 has a TMDS encoder in SIO. pico_lib ships the
+// hand-cranking loops (tmds_encode.S) but its C side always used the RP2040
+// interpolator/LUT path. Use SIO as PicoDVI does (libdvi/tmds_encode.c,
+// tmds_encode_data_channel_16bpp). DVI_TMDS_INTERP forces the old path.
+#if DVI_USE_SIO_TMDS_ENCODER && !defined(DVI_TMDS_INTERP)
+    static inline void __not_in_flash_func(configureSIOTMDS)(uint channel_msb, uint channel_lsb,
+                                                             uint pixel_width, bool hdouble)
+    {
+        sio_hw->tmds_ctrl =
+            SIO_TMDS_CTRL_CLEAR_BALANCE_BITS |
+            ((channel_msb - channel_lsb) << SIO_TMDS_CTRL_L0_NBITS_LSB) |
+            (((channel_msb - 7u) & 0xfu) << SIO_TMDS_CTRL_L0_ROT_LSB) |
+            ((1 + __builtin_ctz(pixel_width)) << SIO_TMDS_CTRL_PIX_SHIFT_LSB) |
+            ((uint)hdouble << SIO_TMDS_CTRL_PIX2_NOSHIFT_LSB);
+    }
+#endif
+
     void __not_in_flash_func(encodeTMDSChannel16bpp)(uint32_t *dstTMDS, const uint32_t *srcPixel, size_t n,
                                                      int shift, int bits)
     {
+#if DVI_USE_SIO_TMDS_ENCODER && !defined(DVI_TMDS_INTERP)
+        // n pixel pairs in, n words (2 doubled symbols each) out
+        configureSIOTMDS(shift + bits - 1, shift, 16, true);
+        tmds_encode_sio_loop_poppop_ratio2(srcPixel, dstTMDS, 2 * n);
+        return;
+#endif
         SaveInterp saveInterp;
 
         int lshift = setupInterp(interp0_hw, 16, shift, bits, tmdsTable_, 6);
