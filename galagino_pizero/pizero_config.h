@@ -24,7 +24,7 @@
 //   0 DOUBLE  374x480, correct 4:3 shape, 1 in 6 rows and columns dropped
 //   1 WIDE    448x432, all rows and columns, 33% too wide on a 4:3 screen
 //   2 ASPECT  336x432, correct shape, all rows, 1 in 4 columns dropped
-#define DVI_MODE 0
+#define DVI_MODE 1
 
 // Alternate which rows/columns are dropped from frame to frame, so every
 // one is shown at least every other frame: thin lines shimmer at 30 Hz

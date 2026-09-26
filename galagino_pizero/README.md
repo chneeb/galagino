@@ -41,7 +41,8 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   fixed that in principle but caused **lots of red flicker** (core 1 too slow) and was removed
   (see commit `9679606`). Alternating the dropped rows/columns per frame
   (`DVI_ALTERNATE_DROP`) is being tried instead (untested).
-- **Switchable 480-line layouts** (DOUBLE/WIDE/ASPECT, direct path) built, untested. This
+- **Switchable 480-line layouts** (DOUBLE/WIDE/ASPECT, direct path) work (2026-09-26); WIDE
+  looked best and is the default. This
   replaces the border setting (didn't help) and the parked max-combining scaler (can't work on
   the direct path; in git history before this change).
 - **SIO TMDS encoder** enabled: core 1 35% → 24% in the old doubled mode (confirmed). Before: `CORE1 %` 35 with Pac-Man (interpolator
@@ -65,7 +66,7 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   | Layout | On screen | Rows | Columns |
   |---|---|---|---|
   | DOUBLE | 374×480, correct 4:3 shape | 240 of 288, each shown twice | 187 of 224 |
-  | WIDE | 448×432 | all, 1.5× | all, sharp, 33% too wide on a 4:3 screen |
+  | **WIDE** (default) | 448×432 | all, 1.5× | all, sharp, 33% too wide on a 4:3 screen |
   | ASPECT | 336×432, correct shape | all, 1.5× | 168 of 224 |
 
   With `DVI_ALTERNATE_DROP` (default), dropped rows/columns alternate per frame, so every one
