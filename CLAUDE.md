@@ -108,7 +108,10 @@ when a buffer is queued.
   doubling (`line * 2` in the DMA IRQ). So a sharp, correctly shaped 1.5× (336×432) would need the
   full-resolution encoder (in `tmds_encode.S`, but without C setup in `pico_lib`).
   `pizero_dvi_proto/` patches line doubling into a runtime setting and measures core 1 load for
-  three layouts. **Result (2026-09-26): 480 unique lines failed** (red screen = missed lines), so
+  three layouts. **Update (2026-09-26, later): 480 unique lines WORK** once pico_lib uses the SIO
+  TMDS encoder, core 1 is kept off flash, and the direct variant's line size bug is fixed:
+  `proto_480_direct` = 43% core 1, 0 missed lines, all 288 rows shown at 1.5×. Not yet in the
+  port. Earlier result: **480 unique lines failed** (red screen = missed lines), so
   **a PiZero port uses the line-doubled mode**: 224×288 shrunk to 187×240 source pixels = 374×480.
   Dropping 1 in 6 rows/columns loses 1-pixel lines (Pac-Man walls). A per-channel-max scaler
   over the 2×2 covered source pixels (DSP `usub8`/`sel`) fixed that but **overloaded core 1**

@@ -32,7 +32,11 @@ ninja -C build
   "no data for this line" (`TMDSRedSym_` in `dma.cpp`), so core 1 missed most lines.
 - `proto_480_direct` (encoder only): a blueish "shadow" of the picture on the right. Unexplained,
   possibly a bug in the new direct path. No serial output taken.
-- **Retest (2026-09-26, rebuilt, untested):** the first 480 attempts predate three fixes: core 1
+- **`proto_480_direct` works (2026-09-26):** 480 unique lines, stable, `BUSY 43%` (all encode,
+  SIO encoder), `MISS 0`, 120 frames per 2 s, HDMI audio packets on. Complete border, all
+  columns, all rows (1.5× vertical, some rows doubled). `proto_480` (with core 1 conversion) not
+  yet reported.
+- **Retest (2026-09-26, rebuilt):** the first 480 attempts predate three fixes: core 1
   still ran flash code (red lines under XIP cache pressure), `pico_lib` used the slow interpolator
   TMDS encoder instead of the RP2350's SIO encoder (core 1 load 35% → 24% in the doubled mode),
   and the direct variant passed the wrong line size (the blue shadow). All three are fixed now,
