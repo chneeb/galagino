@@ -42,7 +42,8 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   (see commit `9679606`). Alternating the dropped rows/columns per frame
   (`DVI_ALTERNATE_DROP`) is being tried instead (untested).
 - **Switchable 480-line layouts** (DOUBLE/WIDE/ASPECT, direct path) work (2026-09-26); WIDE
-  looked best and is the default. This
+  looked best and is the default.
+- **HDMI sound works** (48 kHz, resampled). **1942 plays well** in WIDE. This
   replaces the border setting (didn't help) and the parked max-combining scaler (can't work on
   the direct path; in git history before this change).
 - **SIO TMDS encoder** enabled: core 1 35% → 24% in the old doubled mode (confirmed). Before: `CORE1 %` 35 with Pac-Man (interpolator
