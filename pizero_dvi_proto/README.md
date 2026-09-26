@@ -73,7 +73,7 @@ BLEND (repeat 1): core1 busy 41.2% (compose 12.3%, encode 28.9%, wait 57.1%), mi
 
 ## Local changes to pico_lib
 
-Vendored from `~/Source/msx2pico/pico_lib` (fhoedemakers/pico_lib at `4c53bd2`, plus msx2pico's
+Now lives in `../galagino_pizero/pico_lib` (shared with the port). Vendored from `~/Source/msx2pico/pico_lib` (fhoedemakers/pico_lib at `4c53bd2`, plus msx2pico's
 removed debug printfs). MIT licence, see `pico_lib/LICENSE`. Patched in `dvi/dvi.h` and
 `dvi/dvi.cpp`:
 

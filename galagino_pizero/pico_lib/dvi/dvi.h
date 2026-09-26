@@ -98,7 +98,7 @@ namespace dvi
 
         DMA dma_;
 
-        uint32_t frameCounter_ = 0;
+        volatile uint32_t frameCounter_ = 0;   // galagino: polled from core 0
 
         int lineRepeat_ = N_LINE_PER_DATA;
         volatile uint32_t missedLines_ = 0;

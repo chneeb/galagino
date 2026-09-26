@@ -64,7 +64,11 @@ there is no separate coin button (start doubles as coin).
 
 Two plans exist. **`galagino_picocalc/`** holds the start of the PicoCalc port: a Pac-Man-only
 pico-sdk build that compiles the unchanged `../galagino` emulation sources. See its README for
-build, flash and keys. **Pac-Man works on the PicoCalc hardware (2026-09-25):** 60.6 Hz, video 14.06 ms/frame, emulation
+build, flash and keys. Board-independent code (menu, rendering, sound, input logic, ESP32 stand-ins,
+machine selection) lives in **`galagino_pico_common/`** and is shared by both RP2350 ports; each
+board supplies `platform_buttons()` and `platform_audio_set_rate()`. **`galagino_pizero/`** is the
+RP2350-PiZero DVI port: line-doubled 374×480, NES Mini pad on I2C1 GP2/GP3, HDMI audio at 48 kHz.
+It builds but is **untested on hardware**. `pico_lib` lives in `galagino_pizero/pico_lib`. **Pac-Man works on the PicoCalc hardware (2026-09-25):** 60.6 Hz, video 14.06 ms/frame, emulation
 1.7 ms/frame. The **six-game build** (menu, all sound paths, auto 30 Hz fallback, per-row timing)
 runs on hardware. **All six machines verified at 60 Hz with sound** (2026-09-25); numbers in the plan's benchmark table. The worst frame is 14.7 ms (1942) of 16.5 ms. The DMA takes ~382 us per row; Digdug, 1942 and the menu render some rows slower than that but stay in budget. 1942 audio uses upstream's AY_VOL 4, since two AYs at the old 10 clipped. Upstream AY code ignores envelopes. `main.c` is a C port of `galagino.ino`. Fixes over upstream:
 the Namco wavetable pick is a real if/else chain, and the DK audio read pointer only advances
@@ -111,7 +115,7 @@ when a buffer is queued.
   (256 bytes) and the M0_TIMING literal (`0x40000204` = divider 4, RX delay 2).
 - **PicoCalc audio** is GP26 = left, GP27 = right, both on PWM slice 5 (ClockworkPi's MicroPython
   `boot.py` and PicoMite). The panel is an ST7365P (spec PDF in `~/Source/PicoCalc`).
-- **Force-include trick:** `galagino_picocalc/picocalc_config.h` defines `_CONFIG_H_`, so the CYD
+- **Force-include trick:** each board's config (`galagino_picocalc/picocalc_config.h`, `galagino_pizero/pizero_config.h`) defines `_CONFIG_H_`, so the CYD
   `galagino/config.h` becomes a no-op even though upstream includes it with quotes.
 - RP2040's **16 KB XIP cache** thrashes against random Z80 opcode fetches from flash;
   copying the active ROM into SRAM is the main mitigation.

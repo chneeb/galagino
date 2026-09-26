@@ -15,13 +15,14 @@ set(CMAKE_CXX_STANDARD 17)
 
 pico_sdk_init()
 
-# pico_lib (MIT), vendored from msx2pico with local patches, see README.md
-add_subdirectory(pico_lib/dvi)
-add_subdirectory(pico_lib/util)
+# pico_lib (MIT), vendored in ../galagino_pizero with local patches
+set(PICO_LIB ${CMAKE_CURRENT_LIST_DIR}/../galagino_pizero/pico_lib)
+add_subdirectory(${PICO_LIB}/dvi pico_lib_dvi)
+add_subdirectory(${PICO_LIB}/util pico_lib_util)
 
 foreach(target proto_480 proto_doubled proto_480_direct)
   add_executable(${target} main.cpp)
-  target_include_directories(${target} PRIVATE pico_lib)
+  target_include_directories(${target} PRIVATE ${PICO_LIB})
   target_compile_definitions(${target} PRIVATE
       PICO_PIO_USE_GPIO_BASE=1     # TMDS pins are GPIO 32-38
   )
