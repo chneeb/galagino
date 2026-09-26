@@ -103,3 +103,7 @@ void pad_poll(void) {
 unsigned char pad_buttons(void) {
   return buttons;
 }
+
+bool pad_connected(void) {
+  return connected;
+}

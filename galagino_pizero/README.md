@@ -11,6 +11,7 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
 | `usb_input.c` | USB gamepads/keyboards via PIO-USB (D+ GP28), and the USB-C serial console |
 | `tusb_config.h`, `usb_descriptors.c` | TinyUSB: CDC device on native USB, host on PIO-USB (as in tiny_agi) |
 | `hidparser/` | LUFA-derived HID report descriptor parser, from msx2pico |
+| `font_8x8.h` | 8×8 font for the on-screen diagnostics (pico-infonesPlus, via msx2pico) |
 | `pizero_config.h` | Force-included build config. Defines `_CONFIG_H_` so the CYD `config.h` is skipped |
 | `pico_lib/` | fhoedemakers/pico_lib DVI driver (MIT), vendored and patched, see below |
 
@@ -97,6 +98,23 @@ The USB pad, keyboard and I2C pad can be used together.
 - **TV:** the board doesn't put 5 V on HDMI pin 18, and many TVs stay dark without it (VSYS →
   100 Ω → pin 18 fixes it). PC monitors usually work.
 - **USB gamepads** would need 5 V on the USB port too. Not supported; the I2C pad needs only 3.3 V.
+
+## On-screen diagnostics
+
+With `SHOW_OVERLAY` (on by default in `pizero_config.h`), the black margins beside the game show
+live diagnostics, so no serial console is needed:
+
+| Left margin | Right margin (USB) |
+|---|---|
+| video rate (60/30 Hz) | `DEVICES`: USB devices enumerated (any class). **0 with a pad plugged in = no power or it doesn't enumerate** |
+| `EMU MS` / `DRAW MS`: avg and max per frame | `HID ITF`: HID interfaces mounted. Devices > 0 but 0 here = not a HID pad (e.g. XInput) |
+| `CORE1 %`: core 1 encode load | `VID PID`: USB ID of the last device |
+| `MISSED`: DVI lines core 1 missed (should be 0) | `TYPE` / `DECODER`: keyboard, generic HID parser, SNES clone quirk, or parse error |
+| `I2C PAD`: OK or NONE | `REPORTS` / `LEN` / `RAW`: report count, length and the latest bytes in hex |
+| `BUTTONS`: combined Galagino button bits | `USB BTN`: what the USB input decoded to |
+
+A photo of the screen while pressing pad buttons is enough to diagnose a pad. The font is the 8×8
+one from pico-infonesPlus (via msx2pico), kept in RAM so core 1 never waits on flash.
 
 ## Serial output (every 2 s)
 

@@ -52,6 +52,12 @@ static uint8_t itf_kind[MAX_DEV][MAX_ITF];
 static uint8_t raw_dumps[MAX_DEV][MAX_ITF];   // raw reports printed so far
 #define RAW_DUMP_MAX  16
 
+static usb_status_t status;
+
+const usb_status_t *usb_input_status(void) {
+  return &status;
+}
+
 /* ---------------------------- serial console ---------------------------- */
 
 static void cdc_out_chars(const char *buf, int len) {
@@ -255,6 +261,21 @@ static unsigned char parse_keyboard(const hid_keyboard_report_t *r) {
 
 /* --------------------------- TinyUSB callbacks -------------------------- */
 
+// any device, HID or not: tells "nothing enumerates" (power) from "not HID"
+void tuh_mount_cb(uint8_t dev_addr) {
+  uint16_t vid = 0, pid = 0;
+  tuh_vid_pid_get(dev_addr, &vid, &pid);
+  printf("usb: device %d enumerated, %04x:%04x\n", dev_addr, vid, pid);
+  status.devices++;
+  status.vid = vid;
+  status.pid = pid;
+}
+
+void tuh_umount_cb(uint8_t dev_addr) {
+  printf("usb: device %d detached\n", dev_addr);
+  if(status.devices) status.devices--;
+}
+
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const *desc_report, uint16_t desc_len) {
   uint8_t proto = tuh_hid_interface_protocol(dev_addr, instance);
   uint16_t vid = 0, pid = 0;
@@ -263,25 +284,36 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const *desc_re
          proto == HID_ITF_PROTOCOL_KEYBOARD ? "keyboard" :
          proto == HID_ITF_PROTOCOL_MOUSE ? "mouse" : "other HID");
 
+  status.mounted++;
+  status.vid = vid;
+  status.pid = pid;
+  status.proto = proto;
+  status.decoder = 0;
+
   if(dev_addr < MAX_DEV && instance < MAX_ITF) {
     itf_buttons[dev_addr][instance] = 0;
     raw_dumps[dev_addr][instance] = 0;
     itf_kind[dev_addr][instance] =
       (vid == 0x081f && pid == 0xe401) ? PAD_MANTA :
       (vid == 0x0810 && pid == 0xe501) ? PAD_MANTA_VARIANT : PAD_GENERIC;
-    if(itf_kind[dev_addr][instance] != PAD_GENERIC)
+    if(itf_kind[dev_addr][instance] != PAD_GENERIC) {
       printf("usb: cheap SNES clone, using its raw report layout\n");
+      status.decoder = 2;
+    }
 
-    if(proto == HID_ITF_PROTOCOL_KEYBOARD)
+    if(proto == HID_ITF_PROTOCOL_KEYBOARD) {
       tuh_hid_set_protocol(dev_addr, instance, HID_PROTOCOL_BOOT);
-    else if(proto == HID_ITF_PROTOCOL_NONE) {
+      status.decoder = 3;
+    } else if(proto == HID_ITF_PROTOCOL_NONE && itf_kind[dev_addr][instance] == PAD_GENERIC) {
       if(pad_info[dev_addr][instance]) USB_FreeReportInfo(pad_info[dev_addr][instance]);
       pad_info[dev_addr][instance] = NULL;
       if(USB_ProcessHIDReport(desc_report, desc_len, &pad_info[dev_addr][instance]) != HID_PARSE_Successful) {
         printf("usb: can't parse the report descriptor\n");
+        status.decoder = -1;
         if(pad_info[dev_addr][instance]) USB_FreeReportInfo(pad_info[dev_addr][instance]);
         pad_info[dev_addr][instance] = NULL;
-      }
+      } else
+        status.decoder = 1;
     }
   }
 
@@ -290,6 +322,7 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const *desc_re
 
 void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
   printf("usb: device %d interface %d removed\n", dev_addr, instance);
+  if(status.mounted) status.mounted--;
   if(dev_addr < MAX_DEV && instance < MAX_ITF) {
     itf_buttons[dev_addr][instance] = 0;
     if(pad_info[dev_addr][instance]) USB_FreeReportInfo(pad_info[dev_addr][instance]);
@@ -298,6 +331,9 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
 }
 
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const *report, uint16_t len) {
+  status.reports++;
+  status.len = len;
+  memcpy(status.raw, report, len < sizeof(status.raw) ? len : sizeof(status.raw));
   if(dev_addr < MAX_DEV && instance < MAX_ITF) {
     uint8_t proto = tuh_hid_interface_protocol(dev_addr, instance);
     unsigned char b = itf_buttons[dev_addr][instance];

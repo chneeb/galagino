@@ -14,4 +14,8 @@
 // a game session switches to 30 Hz once 60 Hz can't keep up (Digdug).
 // #define VIDEO_HALF_RATE
 
+// Diagnostics in the black margins beside the game: timings, I2C pad and
+// USB device state (IDs, raw reports), so no serial console is needed.
+#define SHOW_OVERLAY
+
 #endif // _CONFIG_H_

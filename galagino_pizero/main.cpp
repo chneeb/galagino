@@ -12,6 +12,7 @@
  */
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 
 #include "pico/stdlib.h"
@@ -47,6 +48,13 @@ void galagino_idle(unsigned ms);
 #define DST_X   ((LINE_W - DST_W) / 2)
 
 #define HDMI_AUDIO_RATE  48000
+
+// on-screen diagnostics in the black margins beside the game: 8 characters
+// of 8x8 pixels per margin (shown 16x16), 30 rows
+#define OV_COLS   8
+#define OV_ROWS   (LINES / 8)
+#define OV_LEFT_X   1
+#define OV_RIGHT_X  (DST_X + DST_W + 1)
 #define AUDIO_VOLUME     40  // core samples are about +/- 512
 
 // Waveshare RP2350-PiZero, as in pico-infonesPlus dvi_configs.h and msx2pico
@@ -67,6 +75,30 @@ static volatile int scanning = 0;   // screen core 1 is showing
 /* -------------------------------- core 1 -------------------------------- */
 
 static uint8_t xmap[DST_W];         // source column per output column
+
+#ifdef SHOW_OVERLAY
+#include "font_8x8.h"              // 95 glyphs, row-major across glyphs, LSB = left
+static uint8_t font_ram[95 * 8];   // RAM copy: core 1 must never wait on flash
+static_assert(sizeof(font_8x8) == sizeof(font_ram), "font_8x8.h must hold 95 glyphs x 8 rows");
+static char ov_text[2][OV_ROWS][OV_COLS];   // [left/right][row][col], space padded
+static uint16_t ov_color[2][OV_ROWS];
+
+static void __not_in_flash_func(ov_draw_line)(uint16_t *dst, int y) {
+  int row = y >> 3, gy = y & 7;
+  for(int side=0;side<2;side++) {
+    const char *t = ov_text[side][row];
+    uint16_t col = ov_color[side][row];
+    uint16_t *p = dst + (side ? OV_RIGHT_X : OV_LEFT_X);
+    for(int c=0;c<OV_COLS;c++, p+=8) {
+      unsigned ch = (unsigned char)t[c];
+      if(ch <= 32 || ch > 126) continue;
+      uint8_t bits = font_ram[(ch - 32) + gy * 95];
+      for(int b=0;b<8;b++)
+        if(bits & (1 << b)) p[b] = col;
+    }
+  }
+}
+#endif
 
 // big endian RGB565 -> RGB555 as pico_lib's encoder wants it
 static inline uint16_t to555(uint16_t be) {
@@ -89,6 +121,9 @@ static void __not_in_flash_func(core1_main)(void) {
       memset(dst, 0, DST_X * 2);
       for(int x=0;x<DST_W;x++) dst[DST_X + x] = to555(src[xmap[x]]);
       memset(dst + DST_X + DST_W, 0, (LINE_W - DST_X - DST_W) * 2);
+#ifdef SHOW_OVERLAY
+      ov_draw_line(dst, y);
+#endif
 
       dvi_inst->setLineBuffer(y, lb);
       dvi_inst->convertScanBuffer15bpp();
@@ -160,6 +195,10 @@ static int late_frames = 0;
 static uint32_t draw_us_sum = 0, draw_us_max = 0, draw_frames = 0;
 static uint32_t emu_us_sum = 0, emu_us_max = 0, emu_frames = 0;
 
+// last 2 s window, for the overlay
+static uint32_t shown_emu_avg, shown_emu_max, shown_draw_avg, shown_draw_max;
+static uint32_t shown_core1, shown_missed;
+
 static void draw_screen(void) {
   // a finished screen core 1 hasn't picked up yet must not be overwritten
   while(front != scanning) tight_loop_contents();
@@ -200,10 +239,91 @@ static void print_stats(void) {
          100.0f * dvi_inst->getEncodeUs() / (secs * 1e6f),
          dvi_inst->getMissedLines());
 
+  shown_emu_avg  = emu_frames ? emu_us_sum / emu_frames : 0;
+  shown_emu_max  = emu_us_max;
+  shown_draw_avg = draw_frames ? draw_us_sum / draw_frames : 0;
+  shown_draw_max = draw_us_max;
+  shown_core1    = (uint32_t)(100.0f * dvi_inst->getEncodeUs() / (secs * 1e6f));
+  shown_missed   = dvi_inst->getMissedLines();
+
   draw_us_sum = draw_us_max = draw_frames = 0;
   emu_us_sum = emu_us_max = emu_frames = 0;
   dvi_inst->resetStats();
 }
+
+/* ------------------------------- overlay -------------------------------- */
+
+#ifdef SHOW_OVERLAY
+#define OV_LABEL  0x03ff   // cyan (RGB555)
+#define OV_VALUE  0x7fff   // white
+#define OV_WARN   0x7c1f   // magenta
+
+static void ov_set(int side, int row, uint16_t color, const char *fmt, ...) {
+  char buf[16];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  char *t = ov_text[side][row];
+  int i = 0;
+  for(;i<OV_COLS && buf[i];i++) t[i] = buf[i];
+  for(;i<OV_COLS;i++) t[i] = ' ';
+  ov_color[side][row] = color;
+}
+
+static void ov_ms(int side, int row, uint32_t avg, uint32_t max) {
+  ov_set(side, row, OV_VALUE, "%lu.%lu %lu.%lu", avg / 1000, (avg / 100) % 10, max / 1000, (max / 100) % 10);
+}
+
+static void overlay_update(void) {
+  int r = 0;
+  // left: this board and timings
+  ov_set(0, r++, OV_LABEL, "GALAGINO");
+  ov_set(0, r++, OV_LABEL, "PIZERO");
+  r++;
+  ov_set(0, r++, OV_LABEL, "VIDEO");
+  ov_set(0, r++, OV_VALUE, "%s", half_rate ? "30HZ" : "60HZ");
+  ov_set(0, r++, OV_LABEL, "EMU MS");
+  ov_ms(0, r++, shown_emu_avg, shown_emu_max);
+  ov_set(0, r++, OV_LABEL, "DRAW MS");
+  ov_ms(0, r++, shown_draw_avg, shown_draw_max);
+  ov_set(0, r++, OV_LABEL, "CORE1 %");
+  ov_set(0, r++, OV_VALUE, "%lu", shown_core1);
+  ov_set(0, r++, OV_LABEL, "MISSED");
+  ov_set(0, r++, shown_missed ? OV_WARN : OV_VALUE, "%lu", shown_missed);
+  r++;
+  ov_set(0, r++, OV_LABEL, "I2C PAD");
+  ov_set(0, r++, pad_connected() ? OV_VALUE : OV_WARN, "%s", pad_connected() ? "OK" : "NONE");
+  ov_set(0, r++, OV_LABEL, "BUTTONS");
+  ov_set(0, r++, OV_VALUE, "%02X", platform_buttons());
+
+  // right: USB
+  const usb_status_t *u = usb_input_status();
+  static const char *decoders[] = { "NONE", "GENERIC", "SNES CLN", "KEYBOARD" };
+  r = 0;
+  ov_set(1, r++, OV_LABEL, "USB");
+  ov_set(1, r++, OV_LABEL, "DEVICES");
+  ov_set(1, r++, u->devices ? OV_VALUE : OV_WARN, "%d", u->devices);
+  ov_set(1, r++, OV_LABEL, "HID ITF");
+  ov_set(1, r++, OV_VALUE, "%d", u->mounted);
+  ov_set(1, r++, OV_LABEL, "VID PID");
+  ov_set(1, r++, OV_VALUE, "%04X", u->vid);
+  ov_set(1, r++, OV_VALUE, "%04X", u->pid);
+  ov_set(1, r++, OV_LABEL, "TYPE");
+  ov_set(1, r++, OV_VALUE, "%s", u->proto == 1 ? "KEYBOARD" : u->proto == 2 ? "MOUSE" : "OTHER");
+  ov_set(1, r++, OV_LABEL, "DECODER");
+  ov_set(1, r++, u->decoder < 0 ? OV_WARN : OV_VALUE, "%s", u->decoder < 0 ? "PARSEERR" : decoders[u->decoder]);
+  ov_set(1, r++, OV_LABEL, "REPORTS");
+  ov_set(1, r++, OV_VALUE, "%lu", u->reports);
+  ov_set(1, r++, OV_LABEL, "LEN");
+  ov_set(1, r++, OV_VALUE, "%u", u->len);
+  ov_set(1, r++, OV_LABEL, "RAW");
+  for(int i=0;i<16;i+=4)
+    ov_set(1, r++, OV_VALUE, "%02X%02X%02X%02X", u->raw[i], u->raw[i+1], u->raw[i+2], u->raw[i+3]);
+  ov_set(1, r++, OV_LABEL, "USB BTN");
+  ov_set(1, r++, OV_VALUE, "%02X", usb_input_buttons());
+}
+#endif
 
 /* ------------------------- emulation frame hooks ------------------------ */
 
@@ -221,6 +341,9 @@ static void between_frames(void) {
   usb_input_task();
   audio_fill();
   print_stats();
+#ifdef SHOW_OVERLAY
+  if((frame_count & 7) == 0) overlay_update();
+#endif
 }
 
 // called by emulate_frame() (via ulTaskNotifyTake in esp32_compat.h) once
@@ -282,6 +405,10 @@ int main(void) {
   printf("Galagino RP2350-PiZero: sys %lu Hz\n", clock_get_hz(clk_sys));
 
   for(int x=0;x<DST_W;x++) xmap[x] = x * (SRC_W-1) / (DST_W-1);
+#ifdef SHOW_OVERLAY
+  memcpy(font_ram, font_8x8, sizeof(font_ram));
+  memset(ov_text, ' ', sizeof(ov_text));
+#endif
 
   pad_init();
   prepare_emulation();       // allocates memory[], resets the CPUs
