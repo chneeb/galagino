@@ -71,8 +71,8 @@ RP2350-PiZero DVI port: line-doubled 374×480, NES Mini pad on I2C1 GP2/GP3, USB
 via PIO-USB (GP28, needs external 5 V), USB-C CDC console, HDMI audio at 48 kHz.
 Hardware (2026-09-26): DVI works (a monitor stretched it to 16:9 despite the 4:3 AVI InfoFrame),
 a USB keyboard works on PIO-USB without 5 V. The SNES-clone USB pad (`0079:0011`) did nothing over
-PIO-USB but **works on the native USB-C port** (`galagino_pizero_native`, OTG Y-cable), as in
-frank-snes. It needs a fixed byte map (d-pad bytes 3/4), since the generic HID parser misreads it.
+PIO-USB but **works on the native USB-C port** (`galagino_pizero_native`), even without an OTG
+cable, as in frank-snes. Confirmed 2026-09-26. The "USB PIO" port doesn't work with it. It needs a fixed byte map (d-pad bytes 3/4), since the generic HID parser misreads it.
 Pac-Man: emu 2.7 ms, draw 3.2 ms, core 1 35%, 0 missed lines. I2C NES pad and
 per-game timing not yet tested. `pico_lib` lives in `galagino_pizero/pico_lib`. **Pac-Man works on the PicoCalc hardware (2026-09-25):** 60.6 Hz, video 14.06 ms/frame, emulation
 1.7 ms/frame. The **six-game build** (menu, all sound paths, auto 30 Hz fallback, per-row timing)

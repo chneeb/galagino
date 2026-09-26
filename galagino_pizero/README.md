@@ -26,7 +26,8 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   With **`galagino_pizero_native.uf2`** (native USB-C port, OTG Y-cable) it enumerates and sends
   reports (`01 7f 7f XX YY 0f 00 00`). The generic parser misread byte 0 as the stick (Left held
   constantly), so the pad now has a fixed map: frank-snes' fallback layout, d-pad in bytes 3/4.
-  The fix is built but not yet confirmed on hardware.
+  **Confirmed working (2026-09-26)**, and on the native USB-C port it also works **without the OTG
+  cable**. On the port labelled "USB PIO" the pad doesn't work.
 - **Pac-Man timing (native build, on screen):** emulation 2.7 ms (max 2.8), draw 3.2 ms, 60 Hz,
   core 1 35%, 0 missed lines. Emulation is a bit above the ~2.0 ms scaled from the PicoCalc;
   `GALAGINO_FAST_FLASH` may close that. The same pad works in `~/Source/circle-libretro`
@@ -56,8 +57,9 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
 | `build/galagino_pizero.uf2` | PIO-USB port (D+ GP28) | native USB-C (CDC) + UART0 |
 | `build/galagino_pizero_native.uf2` | **native USB-C port**, via OTG cable/hub, as frank-snes does | UART0 only (TX GP0) |
 
-The native variant exists because the SNES-clone pad + hub works in frank-snes, which uses the
-native USB controller, but not over PIO-USB here. With it, power the board through its other
+**Use the native variant for USB gamepads.** The SNES-clone pad works on the native USB-C port
+(with or without an OTG cable) but not on the port labelled "USB PIO". The native variant was added
+because frank-snes, where the same pad works, also uses the native controller. With it, power the board through its other
 USB-C port or the 5 V header pin, since the native port is busy as host. The on-screen
 diagnostics show `USBNATIV` or `USB PIO` at the top left.
 
