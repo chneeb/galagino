@@ -35,8 +35,11 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   (lambdas don't inherit `__not_in_flash_func`). All now run from RAM (`ram_wrappers.c`,
   `--wrap`, `DVI::prepareDataPacket`), and the 640×480 timing table is copied to RAM.
   Verified by disassembly: no call from core 1's per-line functions reaches flash.
-- **Bottom row possibly cut off** on the monitor (likely overscan, since the picture fills all
-  480 lines). Hence the adjustable border (Right in the menu); the right value isn't known yet.
+- **Red flicker gone** after the flash fix (confirmed).
+- **Bottom line / thin maze walls missing:** not overscan (the border made no difference). The
+  6:5 shrink dropped every 6th row and column, which removed 1-pixel lines. Replaced by the
+  max-combining scaler (untested; watch `CORE1 %` and `MISSED` in the diagnostics, estimated
+  ~70–80% busy).
 - **Pac-Man timing (on screen):** emulation 2.7 ms (max 2.8), draw 3.2 ms, 60 Hz,
   core 1 35%, 0 missed lines. Emulation is a bit above the ~2.0 ms scaled from the PicoCalc;
   `GALAGINO_FAST_FLASH` may close that. The same pad works in `~/Source/circle-libretro`
@@ -48,8 +51,12 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
 
 ## How it works
 
-- **Video:** 640×480p60 at a fixed 252 MHz. The 224×288 arcade screen is shrunk to 187×240
-  (1 in 6 rows and columns dropped), and `pico_lib` doubles that to 374×480. This layout was
+- **Video:** 640×480p60 at a fixed 252 MHz. The 224×288 arcade screen is shrunk to 187×240, and
+  `pico_lib` doubles that to 374×480. Each output pixel covers about 1.2×1.2 source pixels and
+  takes the **per-channel maximum** of the up to 2×2 source pixels it covers. That way no row or
+  column is dropped, and 1-pixel lines (e.g. Pac-Man's maze walls) stay fully bright; at most a
+  line looks one step thicker. Uses the M33's DSP `usub8`/`sel` on pixels unpacked to one byte
+  per channel. `DVI_SCALE_NEAREST` in `pizero_config.h` restores plain dropping. This layout was
   chosen with `../pizero_dvi_proto`; 480 unique lines didn't work. Two screen buffers, so no
   tearing.
 - **Core 0** emulates, then draws the whole screen into the back buffer, polls the pad and tops

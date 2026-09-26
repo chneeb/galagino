@@ -24,4 +24,8 @@
 // shape. Right in the game menu cycles through the values.
 #define DVI_BORDER 0
 
+// Shrink the 224x288 screen by dropping every 6th row and column (cheaper
+// for core 1, but thin lines can vanish) instead of combining them.
+// #define DVI_SCALE_NEAREST
+
 #endif // _CONFIG_H_

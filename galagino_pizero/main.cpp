@@ -90,15 +90,27 @@ static volatile bool overlay_on = false;
 #endif
 static volatile int border = DVI_BORDER;   // black lines at top and bottom
 
-// core 1's current geometry, derived from border
-static uint8_t xmap[DST_W_MAX];     // source column per output column
-static int geo_border = -1, geo_w, geo_x;
+// Core 1's current geometry, derived from border. The screen shrinks by
+// about 6:5, so each output pixel covers parts of two source rows and two
+// source columns: [xa, xb] and [ya, yb] below (equal where it covers one).
+static uint8_t xa[DST_W_MAX], xb[DST_W_MAX];
+static uint16_t ya[LINES], yb[LINES];
+static int geo_border = -1, geo_w, geo_x, geo_lines;
 
 static void __not_in_flash_func(set_geometry)(int b) {
-  int lines = LINES - 2 * b;
-  geo_w = (SRC_W * lines + SRC_H / 2) / SRC_H;   // keeps the arcade's shape
+  geo_lines = LINES - 2 * b;
+  geo_w = (SRC_W * geo_lines + SRC_H / 2) / SRC_H;   // keeps the arcade's shape
   geo_x = (LINE_W - geo_w) / 2;
-  for(int x=0;x<geo_w;x++) xmap[x] = x * (SRC_W-1) / (geo_w-1);
+
+  // source span of output pixel i is [i * n / m, (i+1) * n / m)
+  for(int x=0;x<geo_w;x++) {
+    xa[x] = x * SRC_W / geo_w;
+    xb[x] = ((x + 1) * SRC_W - 1) / geo_w;
+  }
+  for(int y=0;y<geo_lines;y++) {
+    ya[y] = y * SRC_H / geo_lines;
+    yb[y] = ((y + 1) * SRC_H - 1) / geo_lines;
+  }
   geo_border = b;
 }
 
@@ -136,6 +148,49 @@ static inline uint16_t to555(uint16_t be) {
   return ((c >> 1) & 0x7fe0) | (c & 0x1f);
 }
 
+#ifndef DVI_SCALE_NEAREST
+// Shrinking by dropping rows and columns loses Galagino's 1 pixel lines (e.g.
+// Pac-Man's maze walls). Instead each output pixel takes the per channel
+// maximum of the source pixels it covers: thin bright lines on the black
+// background stay fully visible. Pixels are unpacked to one byte per channel
+// so the M33's DSP instructions compute the maximum of all three at once.
+
+// big endian RGB565 -> 0x00RRGGBB with 5 bit channels
+static inline uint32_t unpack(uint16_t be) {
+  uint32_t c = (uint16_t)((be >> 8) | (be << 8));
+  return ((c & 0xf800) << 5) | ((c & 0x07c0) << 2) | (c & 0x001f);
+}
+
+// 0x00RRGGBB -> RGB555
+static inline uint16_t pack555(uint32_t p) {
+  return ((p >> 6) & 0x7c00) | ((p >> 3) & 0x03e0) | (p & 0x001f);
+}
+
+// byte-wise maximum: usub8 sets a flag per byte where a >= b, sel picks
+static inline uint32_t max8(uint32_t a, uint32_t b) {
+  uint32_t r;
+  __asm__("usub8 %0, %1, %2\n\tsel %0, %1, %2" : "=&r"(r) : "r"(a), "r"(b) : "cc");
+  return r;
+}
+
+// Unpacked source rows, cached: an output line needs rows r and r+1, which
+// differ in parity, and the next line usually reuses one of them. So each
+// source row is unpacked once per frame, into slot r & 1.
+static uint32_t unpacked[2][SRC_W];
+static int unpacked_row[2];
+static uint32_t row_max[SRC_W];     // two source rows combined
+
+static inline const uint32_t *__not_in_flash_func(get_row)(const uint16_t (*scr)[SRC_W], int r) {
+  uint32_t *u = unpacked[r & 1];
+  if(unpacked_row[r & 1] != r) {
+    const uint16_t *s = scr[r];
+    for(int x=0;x<SRC_W;x++) u[x] = unpack(s[x]);
+    unpacked_row[r & 1] = r;
+  }
+  return u;
+}
+#endif
+
 static void __not_in_flash_func(core1_main)(void) {
   dvi_inst->registerIRQThisCore();
   dvi_inst->start();
@@ -144,8 +199,11 @@ static void __not_in_flash_func(core1_main)(void) {
     int b = front;                  // latched once per frame
     scanning = b;
     if(border != geo_border) set_geometry(border);
-    const int first = geo_border, lines = LINES - 2 * geo_border;
+    const int first = geo_border, lines = geo_lines;
     const bool ov = overlay_on;
+#ifndef DVI_SCALE_NEAREST
+    unpacked_row[0] = unpacked_row[1] = -1;   // new frame, maybe another buffer
+#endif
 
     for(int y=0;y<LINES;y++) {
       dvi::DVI::LineBuffer *lb = dvi_inst->getLineBuffer();
@@ -154,9 +212,21 @@ static void __not_in_flash_func(core1_main)(void) {
       if(y < first || y >= first + lines)
         black(dst, LINE_W);
       else {
-        const uint16_t *src = screen[b][(y - first) * (SRC_H-1) / (lines-1)];
+        int ly = y - first;
         black(dst, geo_x);
-        for(int x=0;x<geo_w;x++) dst[geo_x + x] = to555(src[xmap[x]]);
+#ifdef DVI_SCALE_NEAREST
+        const uint16_t *src = screen[b][ya[ly]];
+        for(int x=0;x<geo_w;x++) dst[geo_x + x] = to555(src[xa[x]]);
+#else
+        const uint32_t *m = get_row(screen[b], ya[ly]);
+        if(yb[ly] != ya[ly]) {
+          const uint32_t *m1 = get_row(screen[b], yb[ly]);
+          for(int x=0;x<SRC_W;x++) row_max[x] = max8(m[x], m1[x]);
+          m = row_max;
+        }
+        uint16_t *d = dst + geo_x;
+        for(int x=0;x<geo_w;x++) d[x] = pack555(max8(m[xa[x]], m[xb[x]]));
+#endif
         black(dst + geo_x + geo_w, LINE_W - geo_x - geo_w);
       }
       if(ov) ov_draw_line(dst, y);
