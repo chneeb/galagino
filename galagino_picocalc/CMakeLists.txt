@@ -21,12 +21,14 @@ add_compile_definitions(PICO_FLASH_SPI_CLKDIV=4 PICO_EMBED_XIP_SETUP=1)
 pico_sdk_init()
 
 set(GALAGINO ${CMAKE_CURRENT_LIST_DIR}/../galagino)
+set(COMMON ${CMAKE_CURRENT_LIST_DIR}/../galagino_pico_common)
 
 add_executable(galagino_picocalc
     main.c
     lcd.c
     kbd.c
     audio.c
+    ${COMMON}/galagino_core.c
     ${GALAGINO}/Z80.c
     ${GALAGINO}/i8048.c
     ${GALAGINO}/emulation.c
@@ -36,6 +38,7 @@ pico_generate_pio_header(galagino_picocalc ${CMAKE_CURRENT_LIST_DIR}/lcd.pio)
 
 target_include_directories(galagino_picocalc PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
+    ${COMMON}
     ${GALAGINO}
 )
 
@@ -48,7 +51,7 @@ target_compile_options(galagino_picocalc PRIVATE
 
 # emulation.c calls a few Arduino/FreeRTOS functions; map them to the SDK.
 set_source_files_properties(${GALAGINO}/emulation.c PROPERTIES
-    COMPILE_OPTIONS "-include;${CMAKE_CURRENT_LIST_DIR}/esp32_compat.h"
+    COMPILE_OPTIONS "-include;${COMMON}/esp32_compat.h"
 )
 
 target_link_libraries(galagino_picocalc PRIVATE
