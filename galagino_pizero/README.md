@@ -44,7 +44,11 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
 - **Switchable 480-line layouts** (DOUBLE/WIDE/ASPECT, direct path) work (2026-09-26); WIDE
   looked best and is the default.
 - **HDMI sound works** (48 kHz, resampled). **1942 plays well** in WIDE. **Galaga runs at 60 Hz**,
-  core 1 at 48% (480 lines, SIO encoder), matching the prototype's 43% plus the extra 48 lines. This
+  core 1 at 48% (480 lines, SIO encoder), matching the prototype's 43% plus the extra 48 lines.
+  **Digdug** stays at 60 Hz (EMU 7.7/7.8 ms, DRAW 9.1/9.2 ms avg/max): 16.8 ms per frame vs a
+  16.67 ms DVI frame, so it runs at ~99% speed. It's too little to trigger the 30 Hz fallback,
+  which needs a whole DVI frame of lateness. DRAW includes core 0's conversion to encoder-ready
+  rows; a 2-pixels-per-word conversion for WIDE (no column lookup) should save ~1 ms. This
   replaces the border setting (didn't help) and the parked max-combining scaler (can't work on
   the direct path; in git history before this change).
 - **SIO TMDS encoder** enabled: core 1 35% → 24% in the old doubled mode (confirmed). Before: `CORE1 %` 35 with Pac-Man (interpolator

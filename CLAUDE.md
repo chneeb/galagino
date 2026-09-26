@@ -72,6 +72,8 @@ on the **native** USB-C port (PIO-USB variant removed), UART0 console, HDMI audi
 on-screen diagnostics. **480 unique lines via the direct path** (core 0 converts to encoder-ready
 rows, core 1 only encodes); in the menu, Left toggles diagnostics and Right cycles the layout
 (DOUBLE 374×480 / WIDE 448×432 / ASPECT 336×432). Works on hardware; **WIDE is the default**. HDMI sound works; 1942 plays well; Galaga at 60 Hz with core 1 at 48%.
+Digdug: EMU 7.7 + DRAW 9.1 ms = 16.8 ms per 16.67 ms frame, so ~99% speed at 60 Hz. The conversion
+in DRAW is the easiest place to save time.
 Hardware (2026-09-26): DVI works (a monitor stretched it to 16:9 despite the 4:3 AVI InfoFrame),
 a USB keyboard works on PIO-USB without 5 V. The SNES-clone USB pad (`0079:0011`) did nothing over
 PIO-USB but **works on the native USB-C port**, even without an OTG cable, as in frank-snes. Confirmed 2026-09-26. The "USB PIO" port doesn't work with it. It needs a fixed byte map (d-pad bytes 3/4), since the generic HID parser misreads it.
