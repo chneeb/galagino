@@ -33,6 +33,9 @@ add_subdirectory(pico_lib/util)
 add_executable(galagino_pizero
     main.cpp
     pad.c
+    usb_input.c
+    usb_descriptors.c
+    hidparser/hidparser.c
     ${COMMON}/galagino_core.c
     ${GALAGINO}/Z80.c
     ${GALAGINO}/i8048.c
@@ -60,6 +63,8 @@ set_source_files_properties(${GALAGINO}/emulation.c PROPERTIES
 
 target_compile_definitions(galagino_pizero PRIVATE
     PICO_PIO_USE_GPIO_BASE=1     # TMDS pins are GPIO 32-38
+    PICO_DEFAULT_PIO_USB_DP_PIN=28
+    CFG_TUSB_CONFIG_FILE="tusb_config.h"
 )
 
 target_link_libraries(galagino_pizero PRIVATE
@@ -75,9 +80,14 @@ target_link_libraries(galagino_pizero PRIVATE
     pico_rand
     dvi
     util
+    tinyusb_device
+    tinyusb_host
+    tinyusb_pico_pio_usb
 )
 
-pico_enable_stdio_usb(galagino_pizero 1)
-pico_enable_stdio_uart(galagino_pizero 0)
+# The SDK disables its USB stdio when the TinyUSB host is linked;
+# usb_input.c provides the USB serial console instead. UART0 (GP0) as backup.
+pico_enable_stdio_usb(galagino_pizero 0)
+pico_enable_stdio_uart(galagino_pizero 1)
 
 pico_add_extra_outputs(galagino_pizero)

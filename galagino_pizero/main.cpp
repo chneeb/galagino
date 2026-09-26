@@ -7,7 +7,7 @@
  *
  * Core 0 does everything else, in the hook emulate_frame() calls once per
  * emulated frame: draw the screen into a back buffer, poll the pad, top up
- * the HDMI audio ring and wait for the next DVI frame. Menu, rendering and
+ * the HDMI audio ring, service USB and wait for the next DVI frame. Menu, rendering and
  * sound are shared with the other RP2350 ports (galagino_core.c).
  */
 
@@ -26,6 +26,7 @@
 
 extern "C" {
 #include "pad.h"
+#include "usb_input.h"
 
 // from emulation.c (emulation.h itself isn't valid C++)
 void prepare_emulation(void);
@@ -98,7 +99,7 @@ static void __not_in_flash_func(core1_main)(void) {
 /* ------------------------------ board glue ------------------------------ */
 
 unsigned char platform_buttons(void) {
-  return pad_buttons();
+  return pad_buttons() | usb_input_buttons();
 }
 
 /* --------------------------------- audio -------------------------------- */
@@ -217,6 +218,7 @@ static void between_frames(void) {
   frame_count++;
 
   pad_poll();
+  usb_input_task();
   audio_fill();
   print_stats();
 }
@@ -294,6 +296,7 @@ int main(void) {
 #endif
 
   multicore_launch_core1(core1_main);
+  usb_input_init();          // after DVI, which claims DMA channels 0-5
   audio_fill();
   last_dvi_frame = dvi_inst->getFrameCounter();
 
