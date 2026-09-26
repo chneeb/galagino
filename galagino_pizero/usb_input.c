@@ -68,6 +68,9 @@ typedef struct {
 
 static const pad_map_t pad_maps[] = {
   { 0x0079, 0x0006, false, 0, 1, SNES_CLONE_BUTTONS },   // DragonRise "USB Gamepad"
+  // SNES clone, report 01 7f 7f XX YY 0f 00 00: frank-snes' fallback layout
+  // (verified from the on-screen raw report, 2026-09-26)
+  { 0x0079, 0x0011, false, 3, 4, SNES_CLONE_BUTTONS },
   { 0x081f, 0xe401, false, 0, 1, SNES_CLONE_BUTTONS },   // SNES clone
   { 0x0810, 0xe501, false, 3, 4, SNES_CLONE_BUTTONS },   // SNES clone variant (infones)
   { 0x046d, 0xc219, true,  5, 0, SNES_CLONE_BUTTONS },   // Logitech

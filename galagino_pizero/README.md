@@ -22,9 +22,14 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   4:3/aspect setting. TVs usually honour the InfoFrame or have a 4:3 mode. A software pre-squeeze
   (224 → 140 columns, blended) would be possible as a build option, but looks soft.
 - **USB keyboard works** on the PIO-USB port, even without 5 V (this keyboard runs on 3.3 V).
-- **USB gamepad (cheap SNES clone) does nothing**, also through a USB-C OTG cable, and through
-  a powered hub that makes the same pad work with frank-snes. frank-snes uses the native USB
-  controller rather than PIO-USB, hence `galagino_pizero_native.uf2` (untested). The same pad works in `~/Source/circle-libretro`
+- **USB gamepad (SNES clone `0079:0011`):** over PIO-USB nothing happened (not diagnosed further).
+  With **`galagino_pizero_native.uf2`** (native USB-C port, OTG Y-cable) it enumerates and sends
+  reports (`01 7f 7f XX YY 0f 00 00`). The generic parser misread byte 0 as the stick (Left held
+  constantly), so the pad now has a fixed map: frank-snes' fallback layout, d-pad in bytes 3/4.
+  The fix is built but not yet confirmed on hardware.
+- **Pac-Man timing (native build, on screen):** emulation 2.7 ms (max 2.8), draw 3.2 ms, 60 Hz,
+  core 1 35%, 0 missed lines. Emulation is a bit above the ~2.0 ms scaled from the PicoCalc;
+  `GALAGINO_FAST_FLASH` may close that. The same pad works in `~/Source/circle-libretro`
   on a Pi, which supplies 5 V. Most likely the pad doesn't run on 3.3 V. To confirm, check the
   console for `usb: device … mounted` when plugging it in; no line means power/enumeration.
   The mapping should already fit: circle-libretro's notes give this pad's buttons as
