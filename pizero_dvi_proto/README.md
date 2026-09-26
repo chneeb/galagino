@@ -28,8 +28,13 @@ ninja -C build
 - `proto_doubled`: picture on a monitor, colours correct. The bottom border was missing because
   of a rounding bug (row 287 never sampled), now fixed. The monitor stretched 640×480 to full
   width. Use its 4:3 / aspect setting to judge shape.
-- `proto_480`: "didn't work"; details and serial output pending. `proto_480_direct` was added to
-  tell encoder cost from conversion cost.
+- `proto_480`: **red screen** with one horizontal band of the picture. Red is `pico_lib`'s
+  "no data for this line" (`TMDSRedSym_` in `dma.cpp`), so core 1 missed most lines.
+- `proto_480_direct` (encoder only): a blueish "shadow" of the picture on the right. Unexplained,
+  possibly a bug in the new direct path. No serial output taken.
+- **Decision: use the doubled mode** (DOUBLED, 374×480, bottom border fixed). The owner finds the
+  picture fine. 480 unique lines is shelved. The untried lever would be encoding only the active
+  pixels, with pre-encoded black margins.
 
 ## Test (monitor, not the TV)
 

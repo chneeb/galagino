@@ -97,7 +97,9 @@ when a buffer is queued.
   doubling (`line * 2` in the DMA IRQ). So a sharp, correctly shaped 1.5× (336×432) would need the
   full-resolution encoder (in `tmds_encode.S`, but without C setup in `pico_lib`).
   `pizero_dvi_proto/` patches line doubling into a runtime setting and measures core 1 load for
-  three layouts. **Awaiting hardware results.**
+  three layouts. **Result (2026-09-26): 480 unique lines failed** (red screen = missed lines), so
+  **a PiZero port uses the line-doubled mode**: 224×288 shrunk to 187×240 source pixels = 374×480,
+  dropping 1 in 6 rows and columns. Verified on a monitor.
 - **Forks worth porting instead of upstream** (details in `plans/rp2350-port.md` §6):
   `VirtualClaudioBoy/GalaginoPlus` (48 games; 6502/6809/6803 cores; `machineBase` class per game;
   platform layer split into `emulation/{video,audio,input,nunchuck}.cpp`) and `speckhoiler/galagino`
