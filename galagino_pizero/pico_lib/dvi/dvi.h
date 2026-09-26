@@ -117,7 +117,12 @@ namespace dvi
         using ResultTMDSBuffer = ResultBuffer<TMDSBuffer *>;
         using ResultLineBuffer = ResultBuffer<LineBuffer *>;
 
-        static inline constexpr size_t N_BUFFERS = 5;
+        // galagino: configurable; with 480 unique lines the IRQ holds 3 of
+        // them, leaving core 1 little slack at 5
+#ifndef DVI_N_BUFFERS
+#define DVI_N_BUFFERS 5
+#endif
+        static inline constexpr size_t N_BUFFERS = DVI_N_BUFFERS;
         static inline constexpr size_t N_COLOR_CH = 3;
 
         TMDSBuffer tmdsBuffers_[N_BUFFERS];

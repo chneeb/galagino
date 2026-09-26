@@ -32,6 +32,13 @@ ninja -C build
   "no data for this line" (`TMDSRedSym_` in `dma.cpp`), so core 1 missed most lines.
 - `proto_480_direct` (encoder only): a blueish "shadow" of the picture on the right. Unexplained,
   possibly a bug in the new direct path. No serial output taken.
+- **Retest (2026-09-26, rebuilt, untested):** the first 480 attempts predate three fixes: core 1
+  still ran flash code (red lines under XIP cache pressure), `pico_lib` used the slow interpolator
+  TMDS encoder instead of the RP2350's SIO encoder (core 1 load 35% → 24% in the doubled mode),
+  and the direct variant passed the wrong line size (the blue shadow). All three are fixed now,
+  and the 480 variants use 8 TMDS buffers instead of 5 for slack. Stats are drawn into the
+  picture (rows 64–79, between the colour bars and the vertical lines), since there's no
+  serial console: `WIDE BUSY 45% MISS 0` / `ENC 30% CMP 12% FR 120`.
 - **Decision: use the doubled mode** (DOUBLED, 374×480, bottom border fixed). The owner finds the
   picture fine. 480 unique lines is shelved. The untried lever would be encoding only the active
   pixels, with pre-encoded black margins.
@@ -57,6 +64,15 @@ The TV needs the 5 V pin-18 mod. A PC monitor should work without it.
 
 If a 480 variant fails, note *how*: no signal, black screen with signal, or a picture with
 black or flickering lines. Serial still runs on core 0 in every case.
+
+## On-screen stats
+
+Two text lines in the picture, updated every 2 s:
+
+- `<layout> BUSY n% MISS n`: core 1's compose + encode share, and DVI lines missed (must be 0)
+- `ENC n% CMP n% FR n`: encode and compose shares separately, and DVI frames per 2 s (~120)
+
+The DVI IRQ's own time (HDMI audio packets etc.) isn't included in BUSY.
 
 ## Serial output
 

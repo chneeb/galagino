@@ -53,6 +53,7 @@ enum layout_t { DOUBLED, WIDE, BLEND, DIRECT };
 static const char *layout_name[] = { "DOUBLED", "WIDE", "BLEND", "DIRECT" };
 
 static dvi::DVI *dvi_inst;
+static dvi::Timing dvi_timing;     // RAM copy: read by the DVI IRQ every line
 static volatile layout_t layout;
 
 #ifndef PROTO_DIRECT
@@ -174,7 +175,9 @@ static void __not_in_flash_func(core1_main)(void) {
   // 480 unique lines, 1.5x vertical, rows straight from core 0's buffer
   while(true) {
     for(int y=24;y<456;y++)
-      dvi_inst->convertScanBuffer15bpp(y, framebuffer555[(y - 24) * 2 / 3], LINE_W);
+      // pico_lib wants the full 640 line size and encodes its first half doubled;
+      // passing 320 misaligned the colour lanes (the earlier "blue shadow")
+      dvi_inst->convertScanBuffer15bpp(y, framebuffer555[(y - 24) * 2 / 3], LINE_W * 2);
   }
 #else
 
@@ -200,6 +203,28 @@ static void __not_in_flash_func(core1_main)(void) {
 
 /* -------------------------------- core 0 -------------------------------- */
 
+// on-screen stats (no serial console needed), drawn into the picture by core 0
+#include "../galagino_pizero/font_8x8.h"
+static char stats_text[2][29] = { "STARTING", "" };
+
+static void draw_text(int x0, int y0, const char *t) {
+  for(;*t;t++, x0+=8) {
+    unsigned ch = (unsigned char)*t;
+    if(ch < 32 || ch > 126) ch = '?';
+    for(int gy=0;gy<8;gy++) {
+      uint8_t bits = font_8x8[(ch - 32) + gy * 95];
+      for(int gx=0;gx<8;gx++) {
+        uint16_t c = (bits & (1 << gx)) ? be565(255, 255, 255) : be565(0, 0, 0);
+#ifdef PROTO_DIRECT
+        framebuffer555[y0 + gy][48 + x0 + gx] = to555(c);
+#else
+        framebuffer[y0 + gy][x0 + gx] = c;
+#endif
+      }
+    }
+  }
+}
+
 // redraw the whole frame like Galagino does every frame, plus a moving box
 static void draw_frame(int frame) {
   int bx = 8 + (frame % 192), by = 248 + ((frame / 4) % 24);
@@ -214,6 +239,9 @@ static void draw_frame(int frame) {
     for(int x=bx;x<bx+16 && x<SRC_W-1;x++)
       framebuffer[y][x] = be565(255, 200, 0);
 #endif
+  // between the colour bars and the line blocks (rows 64..79)
+  draw_text(0, 64, stats_text[0]);
+  draw_text(0, 72, stats_text[1]);
 }
 
 static void feed_silence(void) {
@@ -244,7 +272,8 @@ int main(void) {
   layout = WIDE;
 #endif
 
-  dvi_inst = new dvi::DVI(pio0, &dvi_cfg, dvi::getTiming640x480p60Hz());
+  dvi_timing = *dvi::getTiming640x480p60Hz();
+  dvi_inst = new dvi::DVI(pio0, &dvi_cfg, &dvi_timing);
 #ifndef PROTO_DOUBLED
   dvi_inst->setLineRepeat(1);
   dvi_inst->getBlankSettings().top = (480 - 432) / 2;
@@ -293,6 +322,13 @@ int main(void) {
              100.0f * wait / (secs * 1e6f),
              dvi_inst->getMissedLines(), dvi_inst->getFrameCounter() - last_frames,
              frame ? draw_sum / frame : 0, clock_get_hz(clk_sys) / 1000000);
+      snprintf(stats_text[0], sizeof(stats_text[0]), "%s BUSY %lu%% MISS %lu",
+               layout_name[layout], (unsigned long)(100.0f * (comp + enc) / (secs * 1e6f)),
+               dvi_inst->getMissedLines());
+      snprintf(stats_text[1], sizeof(stats_text[1]), "ENC %lu%% CMP %lu%% FR %lu",
+               (unsigned long)(100.0f * enc / (secs * 1e6f)),
+               (unsigned long)(100.0f * comp / (secs * 1e6f)),
+               dvi_inst->getFrameCounter() - last_frames);
       dvi_inst->resetStats();
       compose_us = 0;
       last_frames = dvi_inst->getFrameCounter();

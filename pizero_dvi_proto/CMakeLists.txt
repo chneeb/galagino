@@ -21,8 +21,12 @@ add_subdirectory(${PICO_LIB}/dvi pico_lib_dvi)
 add_subdirectory(${PICO_LIB}/util pico_lib_util)
 
 foreach(target proto_480 proto_doubled proto_480_direct)
-  add_executable(${target} main.cpp)
+  add_executable(${target} main.cpp ../galagino_pizero/ram_wrappers.c)
   target_include_directories(${target} PRIVATE ${PICO_LIB})
+  # core 1 must not run flash code: RAM copies of memset/memcpy/interp_*
+  target_link_options(${target} PRIVATE
+      -Wl,--wrap=memset -Wl,--wrap=memcpy
+      -Wl,--wrap=interp_save -Wl,--wrap=interp_restore)
   target_compile_definitions(${target} PRIVATE
       PICO_PIO_USE_GPIO_BASE=1     # TMDS pins are GPIO 32-38
   )
@@ -43,5 +47,9 @@ foreach(target proto_480 proto_doubled proto_480_direct)
   pico_add_extra_outputs(${target})
 endforeach()
 
+set_source_files_properties(../galagino_pizero/ram_wrappers.c PROPERTIES
+    COMPILE_OPTIONS "-fno-tree-loop-distribute-patterns")
+
 target_compile_definitions(proto_doubled PRIVATE PROTO_DOUBLED=1)
-target_compile_definitions(proto_480_direct PRIVATE PROTO_DIRECT=1)
+target_compile_definitions(proto_480_direct PRIVATE PROTO_DIRECT=1 DVI_N_BUFFERS=8)
+target_compile_definitions(proto_480 PRIVATE DVI_N_BUFFERS=8)
