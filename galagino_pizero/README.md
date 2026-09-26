@@ -41,7 +41,8 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   fixed that in principle but caused **lots of red flicker** (core 1 too slow), so it's parked
   behind `DVI_SCALE_MAX` and the dropping scaler stays the default. A later attempt would need a
   cheaper formulation, e.g. combining only rows (not columns), a 16-bit-domain max, or moving
-  part of the work to core 0.
+  part of the work to core 0. Alternating the dropped rows/columns per frame
+  (`DVI_ALTERNATE_DROP`) is being tried instead (untested).
 - **Pac-Man timing (on screen):** emulation 2.7 ms (max 2.8), draw 3.2 ms, 60 Hz,
   core 1 35%, 0 missed lines. Emulation is a bit above the ~2.0 ms scaled from the PicoCalc;
   `GALAGINO_FAST_FLASH` may close that. The same pad works in `~/Source/circle-libretro`
@@ -55,7 +56,10 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
 
 - **Video:** 640×480p60 at a fixed 252 MHz. The 224×288 arcade screen is shrunk to 187×240
   (every 6th row and column dropped), and `pico_lib` doubles that to 374×480. Dropping can make
-  1-pixel lines vanish (e.g. some of Pac-Man's maze walls, the bottom line).
+  1-pixel lines vanish (e.g. some of Pac-Man's maze walls, the bottom line). With
+  `DVI_ALTERNATE_DROP` (default on), odd and even frames drop different rows and columns
+  (`floor(1.2 i)` vs `floor(1.2 i + 0.6)`), so every one is shown at least every other frame. Thin
+  lines shimmer at 30 Hz instead of vanishing, at no cost to core 1.
   `DVI_SCALE_MAX` (parked, off) instead takes the per-channel maximum of the 2×2 source pixels
   each output pixel covers (DSP `usub8`/`sel`). That keeps thin lines, but it's too slow for
   core 1 at 252 MHz and causes red flicker. This layout was

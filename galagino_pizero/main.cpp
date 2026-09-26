@@ -95,6 +95,14 @@ static volatile int border = DVI_BORDER;   // black lines at top and bottom
 // source columns: [xa, xb] and [ya, yb] below (equal where it covers one).
 static uint8_t xa[DST_W_MAX], xb[DST_W_MAX];
 static uint16_t ya[LINES], yb[LINES];
+
+// Dropping scaler: source column/row per output pixel, for two phases.
+// Phase 0 takes floor(1.2 i) and skips source rows 5, 11, 17, ...; phase 1
+// takes floor(1.2 i + 0.6) and skips 2, 8, 14, ... instead. Alternating
+// them per frame (DVI_ALTERNATE_DROP) shows every row and column at least
+// every other frame, so thin lines shimmer at 30 Hz instead of vanishing.
+static uint8_t xdrop[2][DST_W_MAX];
+static uint16_t ydrop[2][LINES];
 static int geo_border = -1, geo_w, geo_x, geo_lines;
 
 static void __not_in_flash_func(set_geometry)(int b) {
@@ -106,10 +114,14 @@ static void __not_in_flash_func(set_geometry)(int b) {
   for(int x=0;x<geo_w;x++) {
     xa[x] = x * SRC_W / geo_w;
     xb[x] = ((x + 1) * SRC_W - 1) / geo_w;
+    xdrop[0][x] = xa[x];
+    xdrop[1][x] = (x * SRC_W + SRC_W / 2) / geo_w;
   }
   for(int y=0;y<geo_lines;y++) {
     ya[y] = y * SRC_H / geo_lines;
     yb[y] = ((y + 1) * SRC_H - 1) / geo_lines;
+    ydrop[0][y] = ya[y];
+    ydrop[1][y] = (y * SRC_H + SRC_H / 2) / geo_lines;
   }
   geo_border = b;
 }
@@ -200,6 +212,14 @@ static void __not_in_flash_func(core1_main)(void) {
 
   while(true) {
     int b = front;                  // latched once per frame
+#ifdef DVI_ALTERNATE_DROP
+    static int phase = 0;
+    phase ^= 1;
+#else
+    const int phase = 0;
+#endif
+    const uint8_t *xm = xdrop[phase];
+    const uint16_t *ym = ydrop[phase];
     scanning = b;
     if(border != geo_border) set_geometry(border);
     const int first = geo_border, lines = geo_lines;
@@ -218,8 +238,8 @@ static void __not_in_flash_func(core1_main)(void) {
         int ly = y - first;
         black(dst, geo_x);
 #ifndef DVI_SCALE_MAX
-        const uint16_t *src = screen[b][ya[ly]];
-        for(int x=0;x<geo_w;x++) dst[geo_x + x] = to555(src[xa[x]]);
+        const uint16_t *src = screen[b][ym[ly]];
+        for(int x=0;x<geo_w;x++) dst[geo_x + x] = to555(src[xm[x]]);
 #else
         const uint32_t *m = get_row(screen[b], ya[ly]);
         if(yb[ly] != ya[ly]) {

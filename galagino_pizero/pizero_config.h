@@ -30,4 +30,10 @@
 // too slow for core 1, it causes red flicker (missed lines).
 // #define DVI_SCALE_MAX
 
+// Alternate which rows and columns are dropped from frame to frame, so
+// every one is shown at least every other frame: thin lines shimmer at
+// 30 Hz instead of vanishing. Costs core 1 nothing. Undefine for a steady
+// picture where some 1 pixel lines are missing.
+#define DVI_ALTERNATE_DROP
+
 #endif // _CONFIG_H_
