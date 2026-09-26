@@ -15,9 +15,9 @@
 // #define VIDEO_HALF_RATE
 
 // Diagnostics in the black margins beside the game (timings, pad and USB
-// state). Left in the game menu toggles them; comment this out to start
-// with them off.
-#define SHOW_OVERLAY
+// state). Left in the game menu toggles them; define this to start with
+// them on.
+// #define SHOW_OVERLAY
 
 // Black border at the top and bottom, in source lines (0, 4, 8 or 12), for
 // screens that crop the picture's edges. The picture shrinks to keep its

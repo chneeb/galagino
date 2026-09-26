@@ -39,6 +39,7 @@ add_executable(galagino_pizero
     main.cpp
     pad.c
     usb_input.c
+    ram_wrappers.c
     hidparser/hidparser.c
     ${COMMON}/galagino_core.c
     ${GALAGINO}/Z80.c
@@ -79,6 +80,22 @@ target_link_libraries(galagino_pizero PRIVATE
     dvi
     util
     tinyusb_host
+)
+
+# Core 1's DVI path must not fetch code from flash (see ram_wrappers.c):
+# redirect the flash-resident library functions it calls to RAM copies.
+target_link_options(galagino_pizero PRIVATE
+    -Wl,--wrap=memset
+    -Wl,--wrap=memcpy
+    -Wl,--wrap=interp_save
+    -Wl,--wrap=interp_restore
+)
+set_source_files_properties(ram_wrappers.c PROPERTIES
+    COMPILE_OPTIONS "-fno-tree-loop-distribute-patterns"
+)
+# ...and keep GCC from turning core 1's fill loops into memset calls
+set_source_files_properties(main.cpp PROPERTIES
+    COMPILE_OPTIONS "-fno-tree-loop-distribute-patterns"
 )
 
 # The native USB port is the gamepad host, so stdio goes to UART0 (TX GP0).

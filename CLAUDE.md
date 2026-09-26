@@ -122,6 +122,12 @@ when a buffer is queued.
   (256 bytes) and the M0_TIMING literal (`0x40000204` = divider 4, RX delay 2).
 - **PicoCalc audio** is GP26 = left, GP27 = right, both on PWM slice 5 (ClockworkPi's MicroPython
   `boot.py` and PicoMite). The panel is an ST7365P (spec PDF in `~/Source/PicoCalc`).
+- **Core 1 on the PiZero must never fetch from flash**, code or data. Core 0 streaming the menu
+  logos thrashes the 16 KB XIP cache, and any flash access on core 1's per-line path then misses
+  DVI lines (red flicker). Watch for implicit calls: newlib `memset`/`memcpy` (GCC also turns fill
+  loops into them), SDK `interp_save/restore`, lambdas (they don't inherit `__not_in_flash_func`),
+  and const data like the timing table. Fixed via `ram_wrappers.c` + `--wrap`. To check, run
+  `objdump -D -j .data` and look for `*_veneer` calls from core 1 functions.
 - **Force-include trick:** each board's config (`galagino_picocalc/picocalc_config.h`, `galagino_pizero/pizero_config.h`) defines `_CONFIG_H_`, so the CYD
   `galagino/config.h` becomes a no-op even though upstream includes it with quotes.
 - RP2040's **16 KB XIP cache** thrashes against random Z80 opcode fetches from flash;

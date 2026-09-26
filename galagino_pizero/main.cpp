@@ -69,6 +69,10 @@ static const dvi::Config dvi_cfg = {
 
 static dvi::DVI *dvi_inst;
 
+// RAM copy of the 640x480p60 timing: pico_lib's DVI IRQ on core 1 reads it
+// every line, and the original is const data in flash
+static dvi::Timing dvi_timing;
+
 // two screens in Galagino's format (big endian RGB565): core 1 shows one
 // while core 0 draws the other
 static uint16_t screen[2][SRC_H][SRC_W];
@@ -120,6 +124,12 @@ static void __not_in_flash_func(ov_draw_line)(uint16_t *dst, int y) {
   }
 }
 
+// newlib's memset lives in flash; core 1 must not touch flash while core 0
+// streams through the XIP cache (menu logos), or it misses DVI lines
+static inline void __not_in_flash_func(black)(uint16_t *p, int n) {
+  while(n-- > 0) *p++ = 0;
+}
+
 // big endian RGB565 -> RGB555 as pico_lib's encoder wants it
 static inline uint16_t to555(uint16_t be) {
   uint16_t c = (be >> 8) | (be << 8);
@@ -142,12 +152,12 @@ static void __not_in_flash_func(core1_main)(void) {
       uint16_t *dst = lb->data();
 
       if(y < first || y >= first + lines)
-        memset(dst, 0, LINE_W * 2);
+        black(dst, LINE_W);
       else {
         const uint16_t *src = screen[b][(y - first) * (SRC_H-1) / (lines-1)];
-        memset(dst, 0, geo_x * 2);
+        black(dst, geo_x);
         for(int x=0;x<geo_w;x++) dst[geo_x + x] = to555(src[xmap[x]]);
-        memset(dst + geo_x + geo_w, 0, (LINE_W - geo_x - geo_w) * 2);
+        black(dst + geo_x + geo_w, LINE_W - geo_x - geo_w);
       }
       if(ov) ov_draw_line(dst, y);
 
@@ -454,7 +464,8 @@ int main(void) {
   pad_init();
   prepare_emulation();       // allocates memory[], resets the CPUs
 
-  dvi_inst = new dvi::DVI(pio0, &dvi_cfg, dvi::getTiming640x480p60Hz());
+  dvi_timing = *dvi::getTiming640x480p60Hz();
+  dvi_inst = new dvi::DVI(pio0, &dvi_cfg, &dvi_timing);
   dvi_inst->setAudioFreq(HDMI_AUDIO_RATE, 0, 6144);
   dvi_inst->allocateAudioBuffer(2048);
 

@@ -80,6 +80,7 @@ namespace dvi
 
         void __not_in_flash_func(advanceLine)();
         void __not_in_flash_func(updateDataPacket)();
+        bool __not_in_flash_func(prepareDataPacket)(DataPacket &packet);
         void __not_in_flash_func(dmaIRQHandler)();
 
         static void __not_in_flash_func(dmaIRQEntry)();

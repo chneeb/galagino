@@ -11,6 +11,7 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
 | `usb_input.c` | USB gamepads/keyboards on the native USB-C port (TinyUSB host) |
 | `tusb_config.h` | TinyUSB host configuration |
 | `hidparser/` | LUFA-derived HID report descriptor parser, from msx2pico |
+| `ram_wrappers.c` | RAM copies of `memset`, `memcpy`, `interp_save/restore`, linked in via `--wrap` so core 1 never runs flash code |
 | `font_8x8.h` | 8×8 font for the on-screen diagnostics (pico-infonesPlus, via msx2pico) |
 | `pizero_config.h` | Force-included build config. Defines `_CONFIG_H_` so the CYD `config.h` is skipped |
 | `pico_lib/` | fhoedemakers/pico_lib DVI driver (MIT), vendored and patched, see below |
@@ -28,6 +29,12 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   constantly), so the pad now has a fixed map: frank-snes' fallback layout, d-pad in bytes 3/4.
   **Confirmed working (2026-09-26)**, and on the native USB-C port it also works **without the OTG
   cable**. On the port labelled "USB PIO" the pad doesn't work.
+- **Red flicker in the menu** (fixed, untested): core 1 missed DVI lines while core 0 streamed
+  the menu logos through the 16 KB XIP cache, because core 1's per-line path still ran code from
+  flash: `memset`, `memcpy`, the SDK's `interp_save/restore`, and a lambda in `pico_lib`'s DVI IRQ
+  (lambdas don't inherit `__not_in_flash_func`). All now run from RAM (`ram_wrappers.c`,
+  `--wrap`, `DVI::prepareDataPacket`), and the 640×480 timing table is copied to RAM.
+  Verified by disassembly: no call from core 1's per-line functions reaches flash.
 - **Bottom row possibly cut off** on the monitor (likely overscan, since the picture fills all
   480 lines). Hence the adjustable border (Right in the menu); the right value isn't known yet.
 - **Pac-Man timing (on screen):** emulation 2.7 ms (max 2.8), draw 3.2 ms, 60 Hz,
@@ -103,9 +110,9 @@ The USB pad, keyboard and I2C pad can be used together.
 
 ## On-screen diagnostics
 
-The black margins beside the game show live diagnostics, so no serial console is needed. Press
-Left in the game menu to hide or show them. `SHOW_OVERLAY` in `pizero_config.h` sets whether they
-start on, and `DVI_BORDER` the starting top/bottom border (Right in the menu cycles it).
+The black margins beside the game can show live diagnostics, so no serial console is needed.
+They're **off by default**; press Left in the game menu to show or hide them. `SHOW_OVERLAY` in
+`pizero_config.h` makes them start on, and `DVI_BORDER` the starting top/bottom border (Right in the menu cycles it).
 
 | Left margin | Right margin (USB) |
 |---|---|
@@ -140,3 +147,5 @@ removed debug printfs). MIT, see `pico_lib/LICENSE`. Patched in `dvi/dvi.h` and 
 - missed-line counter in the DMA IRQ; wait/encode timing in `convertScanBuffer15bpp()`
 - `convertScanBuffer15bpp(line, buffer, size)` encoding straight from a caller's buffer
 - `frameCounter_` is `volatile`, so core 0 can poll it for pacing
+- the data-island lambda in `updateDataPacket()` is now `prepareDataPacket()`, marked
+  `__not_in_flash_func` (lambdas don't inherit it, so it ran from flash inside the DVI IRQ)

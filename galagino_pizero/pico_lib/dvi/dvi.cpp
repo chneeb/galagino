@@ -196,83 +196,87 @@ namespace dvi
     DVI::updateDataPacket()
     {
         DataPacket packet;
-        auto proc = [&]
+        if (!prepareDataPacket(packet))
         {
-            if (samplesPerFrame_ == 0)
-            {
-                return false;
-            }
+            packet.setNull();
+        }
+        dma_.updateNextDataPacket(lineState_, packet, *timing_);
+    }
 
-            if (pendingAudioLineCount_)
-            {
-                --pendingAudioLineCount_;
-                return false;
-            }
-            if (audioSampleRing_.getReadableSize() == 0)
-            {
-                // pendingAudioLineCount_ = 1024; // 枯渇しているようなら 2 frame くらい待ってみる
-                // Backoff for approximately 1 video frame instead of large static penalty
-                pendingAudioLineCount_ = timing_->vFrontPorch + timing_->vSyncWidth + timing_->vBackPorch + timing_->vActiveLines;
-            }
+    // galagino: was a lambda inside updateDataPacket(). Lambdas don't inherit
+    // __not_in_flash_func, so it ran from flash inside the DVI IRQ and
+    // stalled core 1 whenever core 0 thrashed the XIP cache (red lines).
+    bool
+    DVI::prepareDataPacket(DataPacket &packet)
+    {
+        if (samplesPerFrame_ == 0)
+        {
+            return false;
+        }
 
-            audioSamplePos_ += samplesPerLine16_;
+        if (pendingAudioLineCount_)
+        {
+            --pendingAudioLineCount_;
+            return false;
+        }
+        if (audioSampleRing_.getReadableSize() == 0)
+        {
+            // pendingAudioLineCount_ = 1024; // 枯渇しているようなら 2 frame くらい待ってみる
+            // Backoff for approximately 1 video frame instead of large static penalty
+            pendingAudioLineCount_ = timing_->vFrontPorch + timing_->vSyncWidth + timing_->vBackPorch + timing_->vActiveLines;
+        }
 
-            if (lineState_ == LineState::FRONT_PORCH)
+        audioSamplePos_ += samplesPerLine16_;
+
+        if (lineState_ == LineState::FRONT_PORCH)
+        {
+            if (lineCounter_ == 0)
             {
-                if (lineCounter_ == 0)
+                if (frameCounter_ & 1)
                 {
-                    if (frameCounter_ & 1)
-                    {
-                        packet = aviInfoFrame_;
-                    }
-                    else
-                    {
-                        packet = audioInfoFrame_;
-                    }
-                    leftAudioSampleCount_ = samplesPerFrame_;
-                    return true;
+                    packet = aviInfoFrame_;
                 }
-                else if (lineCounter_ == 1)
+                else
                 {
-                    packet = audioClockRegeneration_;
-                    return true;
+                    packet = audioInfoFrame_;
                 }
+                leftAudioSampleCount_ = samplesPerFrame_;
+                return true;
             }
+            else if (lineCounter_ == 1)
+            {
+                packet = audioClockRegeneration_;
+                return true;
+            }
+        }
 
 #if 0
-            if (leftAudioSampleCount_)
-            {
-                const auto n = std::min(leftAudioSampleCount_, std::min<int>(audioSampleRing_.getReadableSize(), 2));
-                if (n)
-                {
-                    const auto *p = audioSampleRing_.getReadPointer();
-                    audioFrameCount_ = packet.setAudioSample(p, n, audioFrameCount_);
-                    audioSampleRing_.advanceReadPointer(n);
-                    leftAudioSampleCount_ -= n;
-                    return true;
-                }
-            }
-#else
-            //            audioSamplePos_ += samplesPerLine16_;
-            int n = std::max(0, std::min(4, std::min<int>(audioSamplePos_ >> 16, audioSampleRing_.getReadableSize())));
-            audioSamplePos_ -= n << 16;
+        if (leftAudioSampleCount_)
+        {
+            const auto n = std::min(leftAudioSampleCount_, std::min<int>(audioSampleRing_.getReadableSize(), 2));
             if (n)
             {
                 const auto *p = audioSampleRing_.getReadPointer();
                 audioFrameCount_ = packet.setAudioSample(p, n, audioFrameCount_);
                 audioSampleRing_.advanceReadPointer(n);
+                leftAudioSampleCount_ -= n;
                 return true;
             }
+        }
+#else
+        //            audioSamplePos_ += samplesPerLine16_;
+        int n = std::max(0, std::min(4, std::min<int>(audioSamplePos_ >> 16, audioSampleRing_.getReadableSize())));
+        audioSamplePos_ -= n << 16;
+        if (n)
+        {
+            const auto *p = audioSampleRing_.getReadPointer();
+            audioFrameCount_ = packet.setAudioSample(p, n, audioFrameCount_);
+            audioSampleRing_.advanceReadPointer(n);
+            return true;
+        }
 #endif
 
-            return false;
-        };
-
-        if (!proc())
-        {
-            packet.setNull();
-        }
-        dma_.updateNextDataPacket(lineState_, packet, *timing_);
+        return false;
     }
 
     void
