@@ -19,21 +19,16 @@
 // them on.
 // #define SHOW_OVERLAY
 
-// Black border at the top and bottom, in source lines (0, 4, 8 or 12), for
-// screens that crop the picture's edges. The picture shrinks to keep its
-// shape. Right in the game menu cycles through the values.
-#define DVI_BORDER 0
+// Starting layout of the 224x288 screen on 640x480 (Right in the game menu
+// cycles through them):
+//   0 DOUBLE  374x480, correct 4:3 shape, 1 in 6 rows and columns dropped
+//   1 WIDE    448x432, all rows and columns, 33% too wide on a 4:3 screen
+//   2 ASPECT  336x432, correct shape, all rows, 1 in 4 columns dropped
+#define DVI_MODE 0
 
-// The 224x288 screen is shrunk to 187x240 by dropping every 6th row and
-// column, so 1 pixel lines can vanish. DVI_SCALE_MAX combines them instead
-// (per channel max of the pixels each output pixel covers), but is parked:
-// too slow for core 1, it causes red flicker (missed lines).
-// #define DVI_SCALE_MAX
-
-// Alternate which rows and columns are dropped from frame to frame, so
-// every one is shown at least every other frame: thin lines shimmer at
-// 30 Hz instead of vanishing. Costs core 1 nothing. Undefine for a steady
-// picture where some 1 pixel lines are missing.
+// Alternate which rows/columns are dropped from frame to frame, so every
+// one is shown at least every other frame: thin lines shimmer at 30 Hz
+// instead of vanishing. Undefine for a steady picture with gaps.
 #define DVI_ALTERNATE_DROP
 
 #endif // _CONFIG_H_

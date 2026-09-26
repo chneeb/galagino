@@ -64,6 +64,7 @@ target_compile_options(galagino_pizero PRIVATE
 target_compile_definitions(galagino_pizero PRIVATE
     PICO_PIO_USE_GPIO_BASE=1     # TMDS pins are GPIO 32-38
     CFG_TUSB_CONFIG_FILE="tusb_config.h"
+    DVI_N_BUFFERS=8              # slack for 480 unique lines (pico_lib default 5)
 )
 
 target_link_libraries(galagino_pizero PRIVATE

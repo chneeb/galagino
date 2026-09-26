@@ -43,7 +43,10 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   cheaper formulation, e.g. combining only rows (not columns), a 16-bit-domain max, or moving
   part of the work to core 0. Alternating the dropped rows/columns per frame
   (`DVI_ALTERNATE_DROP`) is being tried instead (untested).
-- **SIO TMDS encoder** enabled (untested). Before: `CORE1 %` 35 with Pac-Man (interpolator
+- **Switchable 480-line layouts** (DOUBLE/WIDE/ASPECT, direct path) built, untested. This
+  replaces the border setting (didn't help) and the parked max-combining scaler (can't work on
+  the direct path; in git history before this change).
+- **SIO TMDS encoder** enabled: core 1 35% → 24% in the old doubled mode (confirmed). Before: `CORE1 %` 35 with Pac-Man (interpolator
   encoder). If it drops a lot, 480 unique lines become worth another try. Note: the direct 480
   prototype's "blue shadow" was a bug, not a limit: it passed 320 as the line buffer size, where
   pico_lib's encoder expects the full 640 (it encodes the first half, doubled).
@@ -58,17 +61,22 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
 
 ## How it works
 
-- **Video:** 640×480p60 at a fixed 252 MHz. The 224×288 arcade screen is shrunk to 187×240
-  (every 6th row and column dropped), and `pico_lib` doubles that to 374×480. Dropping can make
-  1-pixel lines vanish (e.g. some of Pac-Man's maze walls, the bottom line). With
-  `DVI_ALTERNATE_DROP` (default on), odd and even frames drop different rows and columns
-  (`floor(1.2 i)` vs `floor(1.2 i + 0.6)`), so every one is shown at least every other frame. Thin
-  lines shimmer at 30 Hz instead of vanishing, at no cost to core 1.
-  `DVI_SCALE_MAX` (parked, off) instead takes the per-channel maximum of the 2×2 source pixels
-  each output pixel covers (DSP `usub8`/`sel`). That keeps thin lines, but it's too slow for
-  core 1 at 252 MHz and causes red flicker. This layout was
-  chosen with `../pizero_dvi_proto`; 480 unique lines didn't work. Two screen buffers, so no
-  tearing.
+- **Video:** 640×480p60 at a fixed 252 MHz, **480 unique lines** (pico_lib line doubling off).
+  Three layouts, cycled with **Right in the game menu** (the name shows for 2 s):
+
+  | Layout | On screen | Rows | Columns |
+  |---|---|---|---|
+  | DOUBLE | 374×480, correct 4:3 shape | 240 of 288, each shown twice | 187 of 224 |
+  | WIDE | 448×432 | all, 1.5× | all, sharp, 33% too wide on a 4:3 screen |
+  | ASPECT | 336×432, correct shape | all, 1.5× | 168 of 224 |
+
+  With `DVI_ALTERNATE_DROP` (default), dropped rows/columns alternate per frame, so every one
+  shows at least at 30 Hz. `DVI_MODE` in `pizero_config.h` sets the starting layout.
+- **Direct path:** core 0 draws each 8-line tile strip and converts it into encoder-ready RGB555
+  rows (horizontal layout, margins, diagnostics) in one of two frame buffers. Core 1 only picks
+  the row for each of the 480 output lines (vertical layout) and encodes it with the RP2350's
+  SIO TMDS encoder, as proven by `pizero_dvi_proto` (43% core 1 at 480 lines). Converting on
+  core 1 through pico_lib's line queue missed most lines at 480.
 - **Core 0** emulates, then draws the whole screen into the back buffer, polls the pad and tops
   up audio, then waits for the next DVI frame. Five games should fit at 60 Hz. Digdug is expected
   to drop to 30 Hz video, with emulation still at 60 Hz. This happens automatically after 10
@@ -98,7 +106,7 @@ numbers in `plans/rp2350-port.md`.
 | Start | Start |
 | Select + Start (hold 1 s) | Back to the menu (reboots) |
 | Left (in the menu) | Diagnostics on/off |
-| Right (in the menu) | Top/bottom border 0 → 4 → 8 → 12 lines, for screens that crop the edges |
+| Right (in the menu) | Layout: DOUBLE → WIDE → ASPECT |
 
 The pad can be plugged in after power-up; it is retried twice a second.
 
@@ -129,7 +137,8 @@ The USB pad, keyboard and I2C pad can be used together.
 
 The black margins beside the game can show live diagnostics, so no serial console is needed.
 They're **off by default**; press Left in the game menu to show or hide them. `SHOW_OVERLAY` in
-`pizero_config.h` makes them start on, and `DVI_BORDER` the starting top/bottom border (Right in the menu cycles it).
+`pizero_config.h` makes them start on. Core 0 draws them into the margins (6–8 characters wide,
+depending on the layout).
 
 | Left margin | Right margin (USB) |
 |---|---|

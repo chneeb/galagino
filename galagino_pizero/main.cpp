@@ -1,14 +1,27 @@
 /*
  * main.cpp - Galagino on the Waveshare RP2350-PiZero with DVI/HDMI output
  *
- * Core 1 only scans out: each 60 Hz frame it converts the 224x288 arcade
- * screen to 187x240 (dropping 1 in 6 rows and columns, the layout chosen
- * with pizero_dvi_proto) and pico_lib doubles that to 374x480 on 640x480.
+ * pico_lib runs 640x480p60 with 480 unique lines. Three layouts of the
+ * 224x288 arcade screen, cycled with Right in the game menu:
  *
- * Core 0 does everything else, in the hook emulate_frame() calls once per
- * emulated frame: draw the screen into a back buffer, poll the pad, top up
- * the HDMI audio ring, service USB and wait for the next DVI frame. Menu, rendering and
- * sound are shared with the other RP2350 ports (galagino_core.c).
+ *   DOUBLE  374x480: 187x240 source pixels, each shown 2x2 (1 in 6 rows and
+ *           columns dropped). Correct 4:3 shape.
+ *   WIDE    448x432: every row 1.5x, every column 2x. Sharp and complete,
+ *           but 33% too wide on a screen that keeps 4:3.
+ *   ASPECT  336x432: every row 1.5x, 1 in 4 columns dropped. Correct shape.
+ *
+ * With DVI_ALTERNATE_DROP the dropped rows/columns change every frame, so
+ * every one is shown at least at 30 Hz.
+ *
+ * Core 0 emulates, then draws the screen strip by strip and converts each
+ * strip into encoder-ready RGB555 rows (horizontal layout, margins,
+ * diagnostics). Core 1 only picks the row for each of the 480 output lines
+ * (vertical layout) and TMDS-encodes it with the SIO encoder: the "direct"
+ * path proven by pizero_dvi_proto (converting on core 1 through pico_lib's
+ * line queue missed most lines at 480).
+ *
+ * Menu, rendering and sound are shared with the other RP2350 ports
+ * (galagino_core.c).
  */
 
 #include <stdio.h>
@@ -40,25 +53,22 @@ void galagino_wait_vblank(void);
 void galagino_idle(unsigned ms);
 }
 
-#define SRC_W   224
-#define SRC_H   288
-#define LINE_W  320          // pico_lib line buffer, doubled to 640 on screen
-#define LINES   240          // unique lines, each shown twice
-#define DST_W_MAX 187        // 224 * 240 / 288: picture width without a border
+#define SRC_W      224
+#define SRC_H      288
+#define LINE_W     320       // encoder input per line, doubled to 640 on screen
+#define OUT_LINES  480
 
 // from emulation.h, which isn't valid C++
 #define BUTTON_LEFT   0x01
 #define BUTTON_RIGHT  0x02
 
 #define HDMI_AUDIO_RATE  48000
-
-// on-screen diagnostics in the black margins beside the game: 8 characters
-// of 8x8 pixels per margin (shown 16x16), 30 rows
-#define OV_COLS   8
-#define OV_ROWS   (LINES / 8)
-#define OV_LEFT_X   1
-#define OV_RIGHT_X  (LINE_W - OV_COLS * 8 - 2)
 #define AUDIO_VOLUME     40  // core samples are about +/- 512
+
+// on-screen diagnostics in the margins beside the game: up to 8 characters
+// of 8x8 source pixels per margin, one text row per 8 source rows
+#define OV_COLS   8
+#define OV_ROWS   (SRC_H / 8)
 
 // Waveshare RP2350-PiZero, as in pico-infonesPlus dvi_configs.h and msx2pico
 static const dvi::Config dvi_cfg = {
@@ -73,189 +83,79 @@ static dvi::DVI *dvi_inst;
 // every line, and the original is const data in flash
 static dvi::Timing dvi_timing;
 
-// two screens in Galagino's format (big endian RGB565): core 1 shows one
-// while core 0 draws the other
-static uint16_t screen[2][SRC_H][SRC_W];
-static volatile int front = 0;      // latest finished screen
-static volatile int scanning = 0;   // screen core 1 is showing
+/* ------------------------------- layouts -------------------------------- */
 
-/* -------------------------------- core 1 -------------------------------- */
+enum { MODE_DOUBLE, MODE_WIDE, MODE_ASPECT, MODES };
+static const char *const mode_names[MODES] = { "DOUBLE", "WIDE", "ASPECT" };
+static const int mode_w[MODES] = { 187, 224, 168 };   // source pixels per row after scaling
+#define MODE_X0(m)  ((LINE_W - mode_w[m]) / 2)
 
-// Set by core 0 (in the menu: Left toggles the diagnostics, Right cycles the
-// border), picked up by core 1 once per frame
+// horizontal: source column per output column, per phase (core 0)
+static uint8_t hmap[MODES][2][SRC_W];
+// vertical: source row per output line, per phase, 0xffff = black (core 1)
+static uint16_t vmap[MODES][2][OUT_LINES];
+#define VMAP_BLACK 0xffff
+
+static void init_maps(void) {
+  for(int m=0;m<MODES;m++)
+    for(int p=0;p<2;p++) {
+#ifdef DVI_ALTERNATE_DROP
+      int ph = p;
+#else
+      int ph = 0;
+#endif
+      // phase 1 samples half a step later, hitting what phase 0 skips
+      int w = mode_w[m];
+      for(int x=0;x<w;x++)
+        hmap[m][p][x] = (x * SRC_W + (ph ? SRC_W / 2 : 0)) / w;
+
+      for(int y=0;y<OUT_LINES;y++) {
+        if(m == MODE_DOUBLE) {
+          int l = y / 2;                        // 240 unique lines
+          vmap[m][p][y] = (l * SRC_H + (ph ? SRC_H / 2 : 0)) / (OUT_LINES / 2);
+        } else if(y < 24 || y >= 24 + 432)
+          vmap[m][p][y] = VMAP_BLACK;           // 432 lines, centred
+        else
+          vmap[m][p][y] = (y - 24) * 2 / 3;
+      }
+    }
+}
+
+/* ------------------------------ frame data ------------------------------ */
+
+// Two frames of encoder-ready rows (RGB555, 320 wide incl. margins): core 1
+// shows one while core 0 prepares the other.
+static uint16_t disp[2][SRC_H][LINE_W] __attribute__((aligned(4)));
+static volatile uint8_t disp_mode[2];     // layout each frame was prepared for
+static uint16_t black_row[LINE_W] __attribute__((aligned(4)));
+static volatile int front = 0;            // latest finished frame
+static volatile int scanning = 0;         // frame core 1 is showing
+
+// set in the game menu: Left toggles the diagnostics, Right cycles the layout
 #ifdef SHOW_OVERLAY
 static volatile bool overlay_on = true;
 #else
 static volatile bool overlay_on = false;
 #endif
-static volatile int border = DVI_BORDER;   // black lines at top and bottom
+static volatile int video_mode = DVI_MODE;
 
-// Core 1's current geometry, derived from border. The screen shrinks by
-// about 6:5, so each output pixel covers parts of two source rows and two
-// source columns: [xa, xb] and [ya, yb] below (equal where it covers one).
-static uint8_t xa[DST_W_MAX], xb[DST_W_MAX];
-static uint16_t ya[LINES], yb[LINES];
-
-// Dropping scaler: source column/row per output pixel, for two phases.
-// Phase 0 takes floor(1.2 i) and skips source rows 5, 11, 17, ...; phase 1
-// takes floor(1.2 i + 0.6) and skips 2, 8, 14, ... instead. Alternating
-// them per frame (DVI_ALTERNATE_DROP) shows every row and column at least
-// every other frame, so thin lines shimmer at 30 Hz instead of vanishing.
-static uint8_t xdrop[2][DST_W_MAX];
-static uint16_t ydrop[2][LINES];
-static int geo_border = -1, geo_w, geo_x, geo_lines;
-
-static void __not_in_flash_func(set_geometry)(int b) {
-  geo_lines = LINES - 2 * b;
-  geo_w = (SRC_W * geo_lines + SRC_H / 2) / SRC_H;   // keeps the arcade's shape
-  geo_x = (LINE_W - geo_w) / 2;
-
-  // source span of output pixel i is [i * n / m, (i+1) * n / m)
-  for(int x=0;x<geo_w;x++) {
-    xa[x] = x * SRC_W / geo_w;
-    xb[x] = ((x + 1) * SRC_W - 1) / geo_w;
-    xdrop[0][x] = xa[x];
-    xdrop[1][x] = (x * SRC_W + SRC_W / 2) / geo_w;
-  }
-  for(int y=0;y<geo_lines;y++) {
-    ya[y] = y * SRC_H / geo_lines;
-    yb[y] = ((y + 1) * SRC_H - 1) / geo_lines;
-    ydrop[0][y] = ya[y];
-    ydrop[1][y] = (y * SRC_H + SRC_H / 2) / geo_lines;
-  }
-  geo_border = b;
-}
-
-#include "font_8x8.h"              // 95 glyphs, row-major across glyphs, LSB = left
-static uint8_t font_ram[95 * 8];   // RAM copy: core 1 must never wait on flash
-static_assert(sizeof(font_8x8) == sizeof(font_ram), "font_8x8.h must hold 95 glyphs x 8 rows");
-static char ov_text[2][OV_ROWS][OV_COLS];   // [left/right][row][col], space padded
-static uint16_t ov_color[2][OV_ROWS];
-
-static void __not_in_flash_func(ov_draw_line)(uint16_t *dst, int y) {
-  int row = y >> 3, gy = y & 7;
-  for(int side=0;side<2;side++) {
-    const char *t = ov_text[side][row];
-    uint16_t col = ov_color[side][row];
-    uint16_t *p = dst + (side ? OV_RIGHT_X : OV_LEFT_X);
-    for(int c=0;c<OV_COLS;c++, p+=8) {
-      unsigned ch = (unsigned char)t[c];
-      if(ch <= 32 || ch > 126) continue;
-      uint8_t bits = font_ram[(ch - 32) + gy * 95];
-      for(int b=0;b<8;b++)
-        if(bits & (1 << b)) p[b] = col;
-    }
-  }
-}
-
-// newlib's memset lives in flash; core 1 must not touch flash while core 0
-// streams through the XIP cache (menu logos), or it misses DVI lines
-static inline void __not_in_flash_func(black)(uint16_t *p, int n) {
-  while(n-- > 0) *p++ = 0;
-}
-
-// big endian RGB565 -> RGB555 as pico_lib's encoder wants it
-static inline uint16_t to555(uint16_t be) {
-  uint16_t c = (be >> 8) | (be << 8);
-  return ((c >> 1) & 0x7fe0) | (c & 0x1f);
-}
-
-#ifdef DVI_SCALE_MAX
-// DVI_SCALE_MAX (parked, off by default): shrinking by dropping rows and
-// columns loses Galagino's 1 pixel lines (e.g. Pac-Man's maze walls).
-// Instead each output pixel takes the per channel
-// maximum of the source pixels it covers: thin bright lines on the black
-// background stay fully visible. Pixels are unpacked to one byte per channel
-// so the M33's DSP instructions compute the maximum of all three at once.
-// Tested 2026-09-26: too slow for core 1 at 252 MHz, lots of red flicker
-// (missed DVI lines). Would need a cheaper formulation to be usable.
-
-// big endian RGB565 -> 0x00RRGGBB with 5 bit channels
-static inline uint32_t unpack(uint16_t be) {
-  uint32_t c = (uint16_t)((be >> 8) | (be << 8));
-  return ((c & 0xf800) << 5) | ((c & 0x07c0) << 2) | (c & 0x001f);
-}
-
-// 0x00RRGGBB -> RGB555
-static inline uint16_t pack555(uint32_t p) {
-  return ((p >> 6) & 0x7c00) | ((p >> 3) & 0x03e0) | (p & 0x001f);
-}
-
-// byte-wise maximum: usub8 sets a flag per byte where a >= b, sel picks
-static inline uint32_t max8(uint32_t a, uint32_t b) {
-  uint32_t r;
-  __asm__("usub8 %0, %1, %2\n\tsel %0, %1, %2" : "=&r"(r) : "r"(a), "r"(b) : "cc");
-  return r;
-}
-
-// Unpacked source rows, cached: an output line needs rows r and r+1, which
-// differ in parity, and the next line usually reuses one of them. So each
-// source row is unpacked once per frame, into slot r & 1.
-static uint32_t unpacked[2][SRC_W];
-static int unpacked_row[2];
-static uint32_t row_max[SRC_W];     // two source rows combined
-
-static inline const uint32_t *__not_in_flash_func(get_row)(const uint16_t (*scr)[SRC_W], int r) {
-  uint32_t *u = unpacked[r & 1];
-  if(unpacked_row[r & 1] != r) {
-    const uint16_t *s = scr[r];
-    for(int x=0;x<SRC_W;x++) u[x] = unpack(s[x]);
-    unpacked_row[r & 1] = r;
-  }
-  return u;
-}
-#endif
+/* -------------------------------- core 1 -------------------------------- */
 
 static void __not_in_flash_func(core1_main)(void) {
   dvi_inst->registerIRQThisCore();
   dvi_inst->start();
 
+  int phase = 0;
   while(true) {
     int b = front;                  // latched once per frame
-#ifdef DVI_ALTERNATE_DROP
-    static int phase = 0;
-    phase ^= 1;
-#else
-    const int phase = 0;
-#endif
-    const uint8_t *xm = xdrop[phase];
-    const uint16_t *ym = ydrop[phase];
     scanning = b;
-    if(border != geo_border) set_geometry(border);
-    const int first = geo_border, lines = geo_lines;
-    const bool ov = overlay_on;
-#ifdef DVI_SCALE_MAX
-    unpacked_row[0] = unpacked_row[1] = -1;   // new frame, maybe another buffer
-#endif
+    phase ^= 1;
+    const uint16_t *vm = vmap[disp_mode[b]][phase];
 
-    for(int y=0;y<LINES;y++) {
-      dvi::DVI::LineBuffer *lb = dvi_inst->getLineBuffer();
-      uint16_t *dst = lb->data();
-
-      if(y < first || y >= first + lines)
-        black(dst, LINE_W);
-      else {
-        int ly = y - first;
-        black(dst, geo_x);
-#ifndef DVI_SCALE_MAX
-        const uint16_t *src = screen[b][ym[ly]];
-        for(int x=0;x<geo_w;x++) dst[geo_x + x] = to555(src[xm[x]]);
-#else
-        const uint32_t *m = get_row(screen[b], ya[ly]);
-        if(yb[ly] != ya[ly]) {
-          const uint32_t *m1 = get_row(screen[b], yb[ly]);
-          for(int x=0;x<SRC_W;x++) row_max[x] = max8(m[x], m1[x]);
-          m = row_max;
-        }
-        uint16_t *d = dst + geo_x;
-        for(int x=0;x<geo_w;x++) d[x] = pack555(max8(m[xa[x]], m[xb[x]]));
-#endif
-        black(dst + geo_x + geo_w, LINE_W - geo_x - geo_w);
-      }
-      if(ov) ov_draw_line(dst, y);
-
-      dvi_inst->setLineBuffer(y, lb);
-      dvi_inst->convertScanBuffer15bpp();
+    // pico_lib wants the full 640 line size and encodes its first half doubled
+    for(int y=0;y<OUT_LINES;y++) {
+      const uint16_t *row = (vm[y] == VMAP_BLACK) ? black_row : disp[b][vm[y]];
+      dvi_inst->convertScanBuffer15bpp(y, row, LINE_W * 2);
     }
   }
 }
@@ -328,23 +228,99 @@ static uint32_t emu_us_sum = 0, emu_us_max = 0, emu_frames = 0;
 static uint32_t shown_emu_avg, shown_emu_max, shown_draw_avg, shown_draw_max;
 static uint32_t shown_core1, shown_missed;
 
-static void draw_screen(void) {
-  // a finished screen core 1 hasn't picked up yet must not be overwritten
-  while(front != scanning) tight_loop_contents();
-  int target = scanning ^ 1;
+// big endian RGB565 -> RGB555 as pico_lib's encoder wants it
+static inline uint16_t to555(uint16_t be) {
+  uint16_t c = (be >> 8) | (be << 8);
+  return ((c >> 1) & 0x7fe0) | (c & 0x1f);
+}
 
-  uint32_t t = time_us_32();
-  core_prepare_frame();
-  for(int row=0;row<36;row++) {
-    frame_buffer = &screen[target][row * 8][0];
-    core_render_line(row);
+// diagnostics text, filled by overlay_update(), drawn into the margins
+#include "font_8x8.h"              // 95 glyphs, row-major across glyphs, LSB = left
+static char ov_text[2][OV_ROWS][OV_COLS];   // [left/right][row][col], space padded
+static uint16_t ov_color[2][OV_ROWS];
+static uint32_t banner_until = 0;           // layout name shown after a change
+
+static void draw_margin_text(uint16_t (*f)[LINE_W], int side, int row, const char *t, uint16_t color, int m) {
+  int margin = side ? LINE_W - MODE_X0(m) - mode_w[m] : MODE_X0(m);
+  int cols = (margin - 2) / 8;
+  if(cols > OV_COLS) cols = OV_COLS;
+  int x0 = side ? LINE_W - cols * 8 - 1 : 1;
+  for(int c=0;c<cols;c++) {
+    unsigned ch = (unsigned char)t[c];
+    if(ch <= 32 || ch > 126) continue;
+    for(int gy=0;gy<8;gy++) {
+      uint8_t bits = font_8x8[(ch - 32) + gy * 95];
+      uint16_t *p = &f[row * 8 + gy][x0 + c * 8];
+      for(int b=0;b<8;b++)
+        if(bits & (1 << b)) p[b] = color;
+    }
   }
-  front = target;
+}
+
+// margins of each frame buffer: clean for which layout, and whether text was drawn
+static int margin_mode[2] = { -1, -1 };
+static bool margin_text[2] = { false, false };
+
+static void prepare_margins(int t, int m) {
+  bool text = overlay_on || (int32_t)(banner_until - time_us_32()) > 0;
+  if(margin_mode[t] != m || margin_text[t] || text) {
+    int x0 = MODE_X0(m), w = mode_w[m];
+    for(int y=0;y<SRC_H;y++) {
+      memset(disp[t][y], 0, x0 * 2);
+      memset(disp[t][y] + x0 + w, 0, (LINE_W - x0 - w) * 2);
+    }
+    margin_mode[t] = m;
+  }
+  margin_text[t] = text;
+  if(!text) return;
+
+  if(overlay_on) {
+    for(int side=0;side<2;side++)
+      for(int r=0;r<OV_ROWS;r++)
+        draw_margin_text(disp[t], side, r, ov_text[side][r], ov_color[side][r], m);
+  } else {
+    char name[OV_COLS + 1];
+    snprintf(name, sizeof(name), "%-8s", mode_names[m]);
+    draw_margin_text(disp[t], 0, 0, "LAYOUT  ", 0x03ff, m);
+    draw_margin_text(disp[t], 0, 1, name, 0x7fff, m);
+  }
+}
+
+static uint16_t strip[SRC_W * 8] __attribute__((aligned(4)));   // one tile row
+
+static void draw_screen(void) {
+  // a finished frame core 1 hasn't picked up yet must not be overwritten
+  while(front != scanning) tight_loop_contents();
+  int t = scanning ^ 1;
+  int m = video_mode;
+#ifdef DVI_ALTERNATE_DROP
+  static int phase = 0;
+  phase ^= 1;
+#else
+  const int phase = 0;
+#endif
+  const uint8_t *hm = hmap[m][phase];
+  const int x0 = MODE_X0(m), w = mode_w[m];
+
+  uint32_t us = time_us_32();
+  core_prepare_frame();
+  frame_buffer = strip;
+  for(int row=0;row<36;row++) {
+    core_render_line(row);
+    for(int r=0;r<8;r++) {
+      const uint16_t *s = strip + r * SRC_W;
+      uint16_t *d = disp[t][row * 8 + r] + x0;
+      for(int x=0;x<w;x++) d[x] = to555(s[hm[x]]);
+    }
+  }
+  prepare_margins(t, m);
+  disp_mode[t] = m;
+  front = t;
   core_frame_done(half_rate);
 
-  t = time_us_32() - t;
-  draw_us_sum += t;
-  if(t > draw_us_max) draw_us_max = t;
+  us = time_us_32() - us;
+  draw_us_sum += us;
+  if(us > draw_us_max) draw_us_max = us;
   draw_frames++;
 }
 
@@ -399,64 +375,66 @@ static void ov_set(int side, int row, uint16_t color, const char *fmt, ...) {
   ov_color[side][row] = color;
 }
 
+// average and maximum on two rows, to fit 6 character margins
 static void ov_ms(int side, int row, uint32_t avg, uint32_t max) {
-  ov_set(side, row, OV_VALUE, "%lu.%lu %lu.%lu", avg / 1000, (avg / 100) % 10, max / 1000, (max / 100) % 10);
+  ov_set(side, row,     OV_VALUE, "A%lu.%lu", avg / 1000, (avg / 100) % 10);
+  ov_set(side, row + 1, OV_VALUE, "M%lu.%lu", max / 1000, (max / 100) % 10);
 }
 
 static void overlay_update(void) {
   int r = 0;
   // left: this board and timings
-  ov_set(0, r++, OV_LABEL, "GALAGINO");
+  ov_set(0, r++, OV_LABEL, "GALA-");
+  ov_set(0, r++, OV_LABEL, "GINO");
   ov_set(0, r++, OV_LABEL, "PIZERO");
+  r++;
+  ov_set(0, r++, OV_LABEL, "LAYOUT");
+  ov_set(0, r++, OV_VALUE, "%s", mode_names[video_mode]);
   r++;
   ov_set(0, r++, OV_LABEL, "VIDEO");
   ov_set(0, r++, OV_VALUE, "%s", half_rate ? "30HZ" : "60HZ");
   ov_set(0, r++, OV_LABEL, "EMU MS");
-  ov_ms(0, r++, shown_emu_avg, shown_emu_max);
-  ov_set(0, r++, OV_LABEL, "DRAW MS");
-  ov_ms(0, r++, shown_draw_avg, shown_draw_max);
-  ov_set(0, r++, OV_LABEL, "CORE1 %");
+  ov_ms(0, r, shown_emu_avg, shown_emu_max); r += 2;
+  ov_set(0, r++, OV_LABEL, "DRAWMS");
+  ov_ms(0, r, shown_draw_avg, shown_draw_max); r += 2;
+  ov_set(0, r++, OV_LABEL, "CORE1%");
   ov_set(0, r++, OV_VALUE, "%lu", shown_core1);
   ov_set(0, r++, OV_LABEL, "MISSED");
   ov_set(0, r++, shown_missed ? OV_WARN : OV_VALUE, "%lu", shown_missed);
   r++;
-  ov_set(0, r++, OV_LABEL, "I2C PAD");
+  ov_set(0, r++, OV_LABEL, "I2CPAD");
   ov_set(0, r++, pad_connected() ? OV_VALUE : OV_WARN, "%s", pad_connected() ? "OK" : "NONE");
-  ov_set(0, r++, OV_LABEL, "BUTTONS");
+  ov_set(0, r++, OV_LABEL, "BUTTON");
   ov_set(0, r++, OV_VALUE, "%02X", platform_buttons());
-  r++;
-  ov_set(0, r++, OV_LABEL, "BORDER");
-  ov_set(0, r++, OV_VALUE, "%d", border);
 
   // right: USB
   const usb_status_t *u = usb_input_status();
-  static const char *decoders[] = { "NONE", "GENERIC", "KNOWNPAD", "KEYBOARD" };
+  static const char *decoders[] = { "NONE", "HIDPAR", "MAPPED", "KEYBRD" };
   r = 0;
   ov_set(1, r++, OV_LABEL, "USB");
-  ov_set(1, r++, OV_LABEL, "DEVICES");
+  ov_set(1, r++, OV_LABEL, "DEVICE");
   ov_set(1, r++, u->devices ? OV_VALUE : OV_WARN, "%d", u->devices);
-  ov_set(1, r++, OV_LABEL, "HID ITF");
+  ov_set(1, r++, OV_LABEL, "HIDITF");
   ov_set(1, r++, OV_VALUE, "%d", u->mounted);
-  ov_set(1, r++, OV_LABEL, "VID PID");
+  ov_set(1, r++, OV_LABEL, "VIDPID");
   ov_set(1, r++, OV_VALUE, "%04X", u->vid);
   ov_set(1, r++, OV_VALUE, "%04X", u->pid);
   ov_set(1, r++, OV_LABEL, "TYPE");
-  ov_set(1, r++, OV_VALUE, "%s", u->proto == 1 ? "KEYBOARD" : u->proto == 2 ? "MOUSE" : "OTHER");
-  ov_set(1, r++, OV_LABEL, "DECODER");
-  ov_set(1, r++, u->decoder < 0 ? OV_WARN : OV_VALUE, "%s", u->decoder < 0 ? "PARSEERR" : decoders[u->decoder]);
-  ov_set(1, r++, OV_LABEL, "REPORTS");
+  ov_set(1, r++, OV_VALUE, "%s", u->proto == 1 ? "KEYBRD" : u->proto == 2 ? "MOUSE" : "OTHER");
+  ov_set(1, r++, OV_LABEL, "DECODE");
+  ov_set(1, r++, u->decoder < 0 ? OV_WARN : OV_VALUE, "%s", u->decoder < 0 ? "PARERR" : decoders[u->decoder]);
+  ov_set(1, r++, OV_LABEL, "REPORT");
   ov_set(1, r++, OV_VALUE, "%lu", u->reports);
   ov_set(1, r++, OV_LABEL, "LEN");
   ov_set(1, r++, OV_VALUE, "%u", u->len);
   ov_set(1, r++, OV_LABEL, "RAW");
-  for(int i=0;i<16;i+=4)
-    ov_set(1, r++, OV_VALUE, "%02X%02X%02X%02X", u->raw[i], u->raw[i+1], u->raw[i+2], u->raw[i+3]);
-  ov_set(1, r++, OV_LABEL, "USB BTN");
+  for(int i=0;i<15;i+=3)
+    ov_set(1, r++, OV_VALUE, "%02X%02X%02X", u->raw[i], u->raw[i+1], u->raw[i+2]);
+  ov_set(1, r++, OV_LABEL, "USBBTN");
   ov_set(1, r++, OV_VALUE, "%02X", usb_input_buttons());
 }
 
-// in the menu: Left toggles the diagnostics, Right cycles the top/bottom
-// border (0, 4, 8, 12 lines) for screens that crop the picture's edges
+// in the menu: Left toggles the diagnostics, Right cycles the layout
 static void menu_keys(void) {
 #ifndef SINGLE_MACHINE
   static unsigned char last = 0;
@@ -466,8 +444,10 @@ static void menu_keys(void) {
       if(!overlay_on) memset(ov_text, ' ', sizeof(ov_text));
       overlay_on = !overlay_on;
     }
-    if((k & BUTTON_RIGHT) && !(last & BUTTON_RIGHT))
-      border = (border + 4) % 16;
+    if((k & BUTTON_RIGHT) && !(last & BUTTON_RIGHT)) {
+      video_mode = (video_mode + 1) % MODES;
+      banner_until = time_us_32() + 2000000;
+    }
   }
   last = k;
 #endif
@@ -551,14 +531,16 @@ int main(void) {
   stdio_init_all();
   printf("Galagino RP2350-PiZero: sys %lu Hz\n", clock_get_hz(clk_sys));
 
-  memcpy(font_ram, font_8x8, sizeof(font_ram));
+  init_maps();
   memset(ov_text, ' ', sizeof(ov_text));
+  disp_mode[0] = disp_mode[1] = video_mode;
 
   pad_init();
   prepare_emulation();       // allocates memory[], resets the CPUs
 
   dvi_timing = *dvi::getTiming640x480p60Hz();
   dvi_inst = new dvi::DVI(pio0, &dvi_cfg, &dvi_timing);
+  dvi_inst->setLineRepeat(1);          // 480 unique lines, layouts do the rest
   dvi_inst->setAudioFreq(HDMI_AUDIO_RATE, 0, 6144);
   dvi_inst->allocateAudioBuffer(2048);
 

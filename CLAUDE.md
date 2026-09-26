@@ -69,8 +69,9 @@ machine selection) lives in **`galagino_pico_common/`** and is shared by both RP
 board supplies `platform_buttons()` and `platform_audio_set_rate()`. **`galagino_pizero/`** is the
 RP2350-PiZero DVI port: line-doubled 374×480, NES Mini pad on I2C1 GP2/GP3, USB gamepad/keyboard
 on the **native** USB-C port (PIO-USB variant removed), UART0 console, HDMI audio at 48 kHz,
-on-screen diagnostics. In the menu, Left toggles diagnostics and Right cycles a top/bottom border
-for overscan.
+on-screen diagnostics. **480 unique lines via the direct path** (core 0 converts to encoder-ready
+rows, core 1 only encodes); in the menu, Left toggles diagnostics and Right cycles the layout
+(DOUBLE 374×480 / WIDE 448×432 / ASPECT 336×432).
 Hardware (2026-09-26): DVI works (a monitor stretched it to 16:9 despite the 4:3 AVI InfoFrame),
 a USB keyboard works on PIO-USB without 5 V. The SNES-clone USB pad (`0079:0011`) did nothing over
 PIO-USB but **works on the native USB-C port**, even without an OTG cable, as in frank-snes. Confirmed 2026-09-26. The "USB PIO" port doesn't work with it. It needs a fixed byte map (d-pad bytes 3/4), since the generic HID parser misreads it.
