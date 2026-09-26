@@ -18,8 +18,13 @@
  *   BLEND    480 unique lines, 1.5x vertical, 4:3 horizontal blend to 168
  *            source pixels = 336x432 on screen. Correct shape, a bit soft.
  *
+ *   DIRECT   like WIDE, but core 0 keeps the frame in RGB555 already laid
+ *            out 320 wide, and core 1 hands rows straight to the encoder.
+ *            Isolates the encoder's own cost at 480 lines.
+ *
  * Build proto_doubled for DOUBLED; proto_480 alternates WIDE and BLEND
- * every 10 seconds. Stats go to USB serial every 2 seconds.
+ * every 10 seconds; proto_480_direct is DIRECT. Stats go to USB serial
+ * every 2 seconds.
  */
 
 #include <stdio.h>
@@ -44,15 +49,21 @@ static const dvi::Config dvi_cfg = {
 #define SRC_H  288
 #define LINE_W 320           // pico_lib line buffer; doubled to 640 on screen
 
-enum layout_t { DOUBLED, WIDE, BLEND };
-static const char *layout_name[] = { "DOUBLED", "WIDE", "BLEND" };
+enum layout_t { DOUBLED, WIDE, BLEND, DIRECT };
+static const char *layout_name[] = { "DOUBLED", "WIDE", "BLEND", "DIRECT" };
 
 static dvi::DVI *dvi_inst;
 static volatile layout_t layout;
 
+#ifndef PROTO_DIRECT
 // Galagino's frame format: big endian RGB565, as the ILI9341 wants it
 static uint16_t framebuffer[SRC_H][SRC_W];
 static uint16_t pattern[SRC_H][SRC_W];
+#else
+// DIRECT: rows ready for the encoder, RGB555, image at x = 48..271
+static uint16_t framebuffer555[SRC_H][LINE_W] __attribute__((aligned(4)));
+static uint16_t pattern555[SRC_H][LINE_W];
+#endif
 
 static inline uint16_t be565(int r, int g, int b) {
   uint16_t c = ((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3);
@@ -70,7 +81,19 @@ static inline uint16_t avg555(uint16_t a, uint16_t b) {
   return ((a & b) + (((a ^ b) & 0x7bde) >> 1));
 }
 
+static inline void set_pattern(int x, int y, uint16_t c) {
+#ifdef PROTO_DIRECT
+  pattern555[y][48 + x] = to555(c);
+#else
+  pattern[y][x] = c;
+#endif
+}
+
 /* ---------------------------- test pattern ------------------------------ */
+
+static inline uint16_t to555(uint16_t be);
+
+static inline void set_pattern(int x, int y, uint16_t c);
 
 static void make_pattern(void) {
   for(int y=0;y<SRC_H;y++)
@@ -103,7 +126,7 @@ static void make_pattern(void) {
       // white border: must be fully visible
       if(x == 0 || y == 0 || x == SRC_W-1 || y == SRC_H-1) c = be565(255, 255, 255);
 
-      pattern[y][x] = c;
+      set_pattern(x, y, c);
     }
 }
 
@@ -111,6 +134,7 @@ static void make_pattern(void) {
 
 static volatile uint32_t compose_us = 0;
 
+#ifndef PROTO_DIRECT
 // fill one pico_lib line buffer (320 pixels) from source row sy
 static void __not_in_flash_func(compose_line)(uint16_t *dst, int sy, layout_t l) {
   const uint16_t *src = framebuffer[sy];
@@ -136,14 +160,23 @@ static void __not_in_flash_func(compose_line)(uint16_t *dst, int sy, layout_t l)
   } else {  // DOUBLED: 224 -> 187 columns, nearest
     const int w = 187, x0 = (LINE_W - w) / 2;             // 66
     memset(dst, 0, x0 * 2);
-    for(int x=0;x<w;x++) dst[x0 + x] = to555(src[x * 6 / 5]);
+    for(int x=0;x<w;x++) dst[x0 + x] = to555(src[x * (SRC_W-1) / (w-1)]);
     memset(dst + x0 + w, 0, (LINE_W - x0 - w) * 2);
   }
 }
+#endif
 
 static void __not_in_flash_func(core1_main)(void) {
   dvi_inst->registerIRQThisCore();
   dvi_inst->start();
+
+#ifdef PROTO_DIRECT
+  // 480 unique lines, 1.5x vertical, rows straight from core 0's buffer
+  while(true) {
+    for(int y=24;y<456;y++)
+      dvi_inst->convertScanBuffer15bpp(y, framebuffer555[(y - 24) * 2 / 3], LINE_W);
+  }
+#else
 
   const int repeat = dvi_inst->getLineRepeat();
   const int lines = 480 / repeat;                          // logical lines per frame
@@ -155,25 +188,32 @@ static void __not_in_flash_func(core1_main)(void) {
     for(int y=first;y<last;y++) {
       dvi::DVI::LineBuffer *lb = dvi_inst->getLineBuffer();
       uint32_t t = time_us_32();
-      int sy = (repeat == 1) ? (y - first) * 2 / 3 : y * 6 / 5;
+      int sy = (repeat == 1) ? (y - first) * 2 / 3 : y * (SRC_H-1) / (lines-1);
       compose_line(lb->data(), sy, l);
       compose_us += time_us_32() - t;
       dvi_inst->setLineBuffer(y, lb);
       dvi_inst->convertScanBuffer15bpp();
     }
   }
+#endif
 }
 
 /* -------------------------------- core 0 -------------------------------- */
 
 // redraw the whole frame like Galagino does every frame, plus a moving box
 static void draw_frame(int frame) {
-  memcpy(framebuffer, pattern, sizeof(framebuffer));
-
   int bx = 8 + (frame % 192), by = 248 + ((frame / 4) % 24);
+#ifdef PROTO_DIRECT
+  memcpy(framebuffer555, pattern555, sizeof(framebuffer555));
+  for(int y=by;y<by+16 && y<SRC_H-1;y++)
+    for(int x=bx;x<bx+16 && x<SRC_W-1;x++)
+      framebuffer555[y][48 + x] = to555(be565(255, 200, 0));
+#else
+  memcpy(framebuffer, pattern, sizeof(framebuffer));
   for(int y=by;y<by+16 && y<SRC_H-1;y++)
     for(int x=bx;x<bx+16 && x<SRC_W-1;x++)
       framebuffer[y][x] = be565(255, 200, 0);
+#endif
 }
 
 static void feed_silence(void) {
@@ -196,8 +236,10 @@ int main(void) {
   make_pattern();
   draw_frame(0);
 
-#ifdef PROTO_DOUBLED
+#if defined(PROTO_DOUBLED)
   layout = DOUBLED;
+#elif defined(PROTO_DIRECT)
+  layout = DIRECT;
 #else
   layout = WIDE;
 #endif
@@ -232,7 +274,7 @@ int main(void) {
     if(used < 16667) sleep_us(16667 - used);
 
     uint32_t now = time_us_32();
-#ifndef PROTO_DOUBLED
+#if !defined(PROTO_DOUBLED) && !defined(PROTO_DIRECT)
     if(now - last_switch >= 10000000) {
       last_switch = now;
       layout = (layout == WIDE) ? BLEND : WIDE;

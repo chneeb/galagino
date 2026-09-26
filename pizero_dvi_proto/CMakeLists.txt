@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.13)
 
 # DVI geometry prototype for Galagino on the Waveshare RP2350-PiZero.
-# Builds proto_480 (480 unique lines, WIDE/BLEND alternating) and
-# proto_doubled (upstream pico_lib line doubling).
+# Builds proto_480 (480 unique lines, WIDE/BLEND alternating), proto_doubled
+# (upstream pico_lib line doubling) and proto_480_direct (480 lines, encoder only).
 
 set(PICO_BOARD pico2 CACHE STRING "Board type")
 set(PICO_PLATFORM rp2350 CACHE STRING "Platform")
@@ -19,7 +19,7 @@ pico_sdk_init()
 add_subdirectory(pico_lib/dvi)
 add_subdirectory(pico_lib/util)
 
-foreach(target proto_480 proto_doubled)
+foreach(target proto_480 proto_doubled proto_480_direct)
   add_executable(${target} main.cpp)
   target_include_directories(${target} PRIVATE pico_lib)
   target_compile_definitions(${target} PRIVATE
@@ -43,3 +43,4 @@ foreach(target proto_480 proto_doubled)
 endforeach()
 
 target_compile_definitions(proto_doubled PRIVATE PROTO_DOUBLED=1)
+target_compile_definitions(proto_480_direct PRIVATE PROTO_DIRECT=1)

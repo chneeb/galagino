@@ -7,12 +7,13 @@ No emulation. Core 0 holds a test picture in Galagino's frame format (big-endian
 redraws the whole frame at 60 Hz with a moving yellow box, and feeds silence into the HDMI
 audio ring. Core 1 converts, scales and TMDS-encodes each line, like a real port would.
 
-## Two firmware files
+## Three firmware files
 
 | File | Mode | On screen |
 |---|---|---|
 | `build/proto_doubled.uf2` | 240 unique lines, each shown twice (msx2pico's mode) | **DOUBLED**: 374×480, correct shape, but 1 in 6 rows and columns dropped |
 | `build/proto_480.uf2` | 480 unique lines (patched `pico_lib`) | alternates every 10 s: **WIDE** 448×432, sharp but 33% too wide, and **BLEND** 336×432, correct shape, slightly soft |
+| `build/proto_480_direct.uf2` | 480 unique lines, encoder only | **DIRECT**: same picture as WIDE, but core 0 stores the frame ready for the encoder, so core 1 only encodes |
 
 ## Build
 
@@ -21,6 +22,14 @@ cd pizero_dvi_proto
 PICO_SDK_PATH=~/Source/pico-sdk cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 ninja -C build
 ```
+
+## Results so far (2026-09-26)
+
+- `proto_doubled`: picture on a monitor, colours correct. The bottom border was missing because
+  of a rounding bug (row 287 never sampled), now fixed. The monitor stretched 640×480 to full
+  width. Use its 4:3 / aspect setting to judge shape.
+- `proto_480`: "didn't work"; details and serial output pending. `proto_480_direct` was added to
+  tell encoder cost from conversion cost.
 
 ## Test (monitor, not the TV)
 
@@ -37,6 +46,12 @@ The TV needs the 5 V pin-18 mod. A PC monitor should work without it.
      appears doubled, so expect a slightly uneven stripe rhythm.
 4. Copy a few serial lines of each layout.
 5. Flash `proto_doubled.uf2` and do the same. Expect visible gaps in both line blocks.
+6. Flash `proto_480_direct.uf2`. If this shows a picture while `proto_480` doesn't, core 1's
+   per-line conversion is the problem and belongs on core 0. If it fails too, the encoder alone
+   can't do 480 unique lines.
+
+If a 480 variant fails, note *how*: no signal, black screen with signal, or a picture with
+black or flickering lines. Serial still runs on core 0 in every case.
 
 ## Serial output
 

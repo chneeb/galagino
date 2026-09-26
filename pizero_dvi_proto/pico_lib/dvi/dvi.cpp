@@ -461,6 +461,19 @@ namespace dvi
     }
 
     void
+    DVI::convertScanBuffer15bpp(uint16_t line, const uint16_t *buffer, size_t size)
+    {
+        uint32_t t0 = time_us_32();
+        auto dstTMDS = freeTMDSQueue_.deque();
+        uint32_t t1 = time_us_32();
+        encodeTMDS_RGB555(dstTMDS->data(), buffer, size);
+        validTMDSQueue_.enque({line, dstTMDS});
+        uint32_t t2 = time_us_32();
+        waitUs_ += t1 - t0;
+        encodeUs_ += t2 - t1;
+    }
+
+    void
     DVI::convertScanBuffer12bpp()
     {
         auto dstTMDS = freeTMDSQueue_.deque();
