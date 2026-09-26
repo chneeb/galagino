@@ -69,7 +69,10 @@ machine selection) lives in **`galagino_pico_common/`** and is shared by both RP
 board supplies `platform_buttons()` and `platform_audio_set_rate()`. **`galagino_pizero/`** is the
 RP2350-PiZero DVI port: line-doubled 374×480, NES Mini pad on I2C1 GP2/GP3, USB gamepad/keyboard
 via PIO-USB (GP28, needs external 5 V), USB-C CDC console, HDMI audio at 48 kHz.
-It builds but is **untested on hardware**. `pico_lib` lives in `galagino_pizero/pico_lib`. **Pac-Man works on the PicoCalc hardware (2026-09-25):** 60.6 Hz, video 14.06 ms/frame, emulation
+Hardware (2026-09-26): DVI works (a monitor stretched it to 16:9 despite the 4:3 AVI InfoFrame),
+a USB keyboard works on PIO-USB without 5 V, but a cheap SNES-clone USB pad (works in
+`~/Source/circle-libretro`) doesn't respond, most likely because it needs 5 V. I2C NES pad and
+per-game timing not yet tested. `pico_lib` lives in `galagino_pizero/pico_lib`. **Pac-Man works on the PicoCalc hardware (2026-09-25):** 60.6 Hz, video 14.06 ms/frame, emulation
 1.7 ms/frame. The **six-game build** (menu, all sound paths, auto 30 Hz fallback, per-row timing)
 runs on hardware. **All six machines verified at 60 Hz with sound** (2026-09-25); numbers in the plan's benchmark table. The worst frame is 14.7 ms (1942) of 16.5 ms. The DMA takes ~382 us per row; Digdug, 1942 and the menu render some rows slower than that but stay in budget. 1942 audio uses upstream's AY_VOL 4, since two AYs at the old 10 clipped. Upstream AY code ignores envelopes. `main.c` is a C port of `galagino.ino`. Fixes over upstream:
 the Namco wavetable pick is a real if/else chain, and the DK audio read pointer only advances

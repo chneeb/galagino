@@ -14,6 +14,20 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
 | `pizero_config.h` | Force-included build config. Defines `_CONFIG_H_` so the CYD `config.h` is skipped |
 | `pico_lib/` | fhoedemakers/pico_lib DVI driver (MIT), vendored and patched, see below |
 
+## Hardware results (2026-09-26)
+
+- **DVI output works** on a monitor. The monitor stretches 640×480 to 16:9 although the HDMI
+  AVI InfoFrame already says 4:3 (`pico_lib` sends picture aspect 4:3, VIC 1). Use the monitor's
+  4:3/aspect setting. TVs usually honour the InfoFrame or have a 4:3 mode. A software pre-squeeze
+  (224 → 140 columns, blended) would be possible as a build option, but looks soft.
+- **USB keyboard works** on the PIO-USB port, even without 5 V (this keyboard runs on 3.3 V).
+- **USB gamepad (cheap SNES clone) does nothing.** The same pad works in `~/Source/circle-libretro`
+  on a Pi, which supplies 5 V. Most likely the pad doesn't run on 3.3 V. To confirm, check the
+  console for `usb: device … mounted` when plugging it in; no line means power/enumeration.
+  The mapping should already fit: circle-libretro's notes give this pad's buttons as
+  X/A/B/Y/L/R = 1–6, Select = 9, Start = 10, which matches the `PAD_*` defaults.
+- **NES Mini pad over I2C:** not yet tested.
+
 ## How it works
 
 - **Video:** 640×480p60 at a fixed 252 MHz. The 224×288 arcade screen is shrunk to 187×240
@@ -55,7 +69,8 @@ The pad can be plugged in after power-up; it is retried twice a second.
 
 Plug it into the PiZero's **PIO-USB port** (D+ on GP28, the USB-C port that isn't the native
 one). **It needs 5 V from elsewhere:** the board doesn't power its USB ports. Use a powered hub,
-or an OTG adapter with a power input.
+or an OTG adapter with a power input. Some devices run on the 3.3 V that's there (a keyboard did);
+the SNES-clone gamepad tested so far didn't.
 
 - **Generic HID gamepads** (DirectInput style, most cheap/retro USB pads): d-pad, hat or stick
   moves. Buttons 1–6 fire, 7 or 9 coin (select), 8 or 10 start. Coin + start held 1 s returns to
