@@ -22,8 +22,9 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   4:3/aspect setting. TVs usually honour the InfoFrame or have a 4:3 mode. A software pre-squeeze
   (224 → 140 columns, blended) would be possible as a build option, but looks soft.
 - **USB keyboard works** on the PIO-USB port, even without 5 V (this keyboard runs on 3.3 V).
-- **USB gamepad (cheap SNES clone) does nothing**, also through a USB-C OTG cable (which adds no
-  power unless it has a power input). The same pad works in `~/Source/circle-libretro`
+- **USB gamepad (cheap SNES clone) does nothing**, also through a USB-C OTG cable, and through
+  a powered hub that makes the same pad work with frank-snes. frank-snes uses the native USB
+  controller rather than PIO-USB, hence `galagino_pizero_native.uf2` (untested). The same pad works in `~/Source/circle-libretro`
   on a Pi, which supplies 5 V. Most likely the pad doesn't run on 3.3 V. To confirm, check the
   console for `usb: device … mounted` when plugging it in; no line means power/enumeration.
   The mapping should already fit: circle-libretro's notes give this pad's buttons as
@@ -42,6 +43,18 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   late frames and is printed on serial.
 - **Audio:** HDMI audio at 48 kHz, linearly resampled from the core's 24 kHz (DK: 11,765 Hz).
   TVs reject non-standard rates, see msx2pico.
+
+## Two firmware variants
+
+| File | Gamepad port | Serial console |
+|---|---|---|
+| `build/galagino_pizero.uf2` | PIO-USB port (D+ GP28) | native USB-C (CDC) + UART0 |
+| `build/galagino_pizero_native.uf2` | **native USB-C port**, via OTG cable/hub, as frank-snes does | UART0 only (TX GP0) |
+
+The native variant exists because the SNES-clone pad + hub works in frank-snes, which uses the
+native USB controller, but not over PIO-USB here. With it, power the board through its other
+USB-C port or the 5 V header pin, since the native port is busy as host. The on-screen
+diagnostics show `USBNATIV` or `USB PIO` at the top left.
 
 ## Build
 
@@ -78,8 +91,10 @@ the SNES-clone gamepad tested so far didn't.
   moves. Buttons 1–6 fire, 7 or 9 coin (select), 8 or 10 start. Coin + start held 1 s returns to
   the menu. Pads differ: the console prints `usb: galagino buttons 0x.., pad buttons 3 9` on
   every change, so a wrong mapping can be fixed in the `PAD_*` defines in `usb_input.c`.
-- **Cheap AliExpress SNES clones** with USB ID `081f:e401` or `0810:e501` are decoded from their
-  raw reports (layout from pico-infonesPlus), since their descriptors mislead generic parsing.
+- **Known pads** are decoded from fixed byte positions measured for frank-snes
+  (`~/Source/frank-snes/gamepads`): `0079:0006`, `081f:e401` (SNES clones), `11ff:3331`,
+  `046d:c219`, `2563:0575`, `feed:2320`, plus `0810:e501` from pico-infonesPlus. Cheap SNES
+  clones don't describe themselves reliably, so descriptor parsing isn't used for these.
 - **XInput (Xbox style) pads** are not supported.
 
 **If a pad does nothing,** watch the console while plugging it in:

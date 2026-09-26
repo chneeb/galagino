@@ -279,7 +279,11 @@ static void overlay_update(void) {
   int r = 0;
   // left: this board and timings
   ov_set(0, r++, OV_LABEL, "GALAGINO");
-  ov_set(0, r++, OV_LABEL, "PIZERO");
+#if GALAGINO_USB_NATIVE
+  ov_set(0, r++, OV_LABEL, "USBNATIV");
+#else
+  ov_set(0, r++, OV_LABEL, "USB PIO");
+#endif
   r++;
   ov_set(0, r++, OV_LABEL, "VIDEO");
   ov_set(0, r++, OV_VALUE, "%s", half_rate ? "30HZ" : "60HZ");
@@ -299,7 +303,7 @@ static void overlay_update(void) {
 
   // right: USB
   const usb_status_t *u = usb_input_status();
-  static const char *decoders[] = { "NONE", "GENERIC", "SNES CLN", "KEYBOARD" };
+  static const char *decoders[] = { "NONE", "GENERIC", "KNOWNPAD", "KEYBOARD" };
   r = 0;
   ov_set(1, r++, OV_LABEL, "USB");
   ov_set(1, r++, OV_LABEL, "DEVICES");

@@ -20,7 +20,7 @@ typedef struct {
   int mounted;              // HID interfaces currently mounted
   unsigned short vid, pid;  // of the last mounted one
   unsigned char proto;      // 0 other, 1 keyboard, 2 mouse
-  signed char decoder;      // 0 none, 1 generic parser, 2 SNES clone, 3 keyboard, -1 parse failed
+  signed char decoder;      // 0 none, 1 generic parser, 2 known pad map, 3 keyboard, -1 parse failed
   unsigned long reports;    // reports received so far
   unsigned char len;        // length of the latest report
   unsigned char raw[16];    // its first bytes

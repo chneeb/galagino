@@ -1,9 +1,9 @@
 /*
  * tusb_config.h - TinyUSB configuration for galagino_pizero
  *
- * Native USB (rhport 0): CDC device, the serial console.
- * PIO-USB (rhport 1, D+ on GP28): host for USB gamepads and keyboards.
- * Same split as tiny_agi's RP2350-PiZero DVI target.
+ * Default: native USB (rhport 0) is a CDC device (serial console), PIO-USB
+ * (rhport 1, D+ on GP28) the host, as in tiny_agi's RP2350-PiZero target.
+ * GALAGINO_USB_NATIVE: native USB is the host instead, as in frank-snes.
  */
 #ifndef _TUSB_CONFIG_H_
 #define _TUSB_CONFIG_H_
@@ -32,6 +32,14 @@ extern "C" {
 #define CFG_TUSB_MEM_ALIGN  __attribute__((aligned(4)))
 #endif
 
+#if GALAGINO_USB_NATIVE
+// native USB-C port as host (like frank-snes); no device stack, no PIO-USB
+#define CFG_TUSB_RHPORT0_MODE  (OPT_MODE_HOST | OPT_MODE_FULL_SPEED)
+#define CFG_TUD_ENABLED        0
+#define CFG_TUH_ENABLED        1
+#define CFG_TUH_RPI_PIO_USB    0
+#define BOARD_TUH_RHPORT       0
+#else
 // device: serial console on the native USB-C port
 #define CFG_TUSB_RHPORT0_MODE  (OPT_MODE_DEVICE | OPT_MODE_FULL_SPEED)
 #define CFG_TUD_ENABLED        1
@@ -47,6 +55,7 @@ extern "C" {
 #define CFG_TUH_ENABLED        1
 #define CFG_TUH_RPI_PIO_USB    1
 #define BOARD_TUH_RHPORT       1
+#endif
 #define CFG_TUH_MAX_SPEED      OPT_MODE_FULL_SPEED
 
 #define CFG_TUH_ENUMERATION_BUFSIZE  256

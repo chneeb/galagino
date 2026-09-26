@@ -13,9 +13,13 @@
  * give directions, button usages give fire, coin and start. Boot protocol
  * keyboards work too. XInput (Xbox style) pads are not supported.
  *
- * Cheap AliExpress SNES clones (081f:e401 and 0810:e501) are decoded from
- * their raw 8 byte reports instead, as pico-infonesPlus does (hid_app.cpp),
- * since generic descriptor parsing doesn't work for them there either.
+ * Known pads are decoded from fixed byte positions instead, using the maps
+ * measured for frank-snes (drivers/usbhid/hid_app.c, gamepads/*.txt): cheap
+ * SNES clones don't describe themselves reliably. 0810:e501 comes from
+ * pico-infonesPlus (hid_app.cpp).
+ *
+ * GALAGINO_USB_NATIVE: host on the native USB-C port instead (as frank-snes
+ * does), no PIO-USB and no USB serial console.
  */
 
 #include "usb_input.h"
@@ -26,7 +30,9 @@
 #include "pico/stdlib.h"
 #include "pico/stdio/driver.h"
 #include "tusb.h"
+#if !GALAGINO_USB_NATIVE
 #include "pio_usb.h"
+#endif
 #include "hidparser/hidparser.h"
 
 #include "Z80.h"          // pulls in emulation.h for the BUTTON_* bits
@@ -47,8 +53,33 @@ static HID_ReportInfo_t *pad_info[MAX_DEV][MAX_ITF];
 static unsigned char itf_buttons[MAX_DEV][MAX_ITF];
 static uint32_t raw_buttons;   // pressed gamepad button usages, bit n = button n+1
 
-enum { PAD_GENERIC, PAD_MANTA, PAD_MANTA_VARIANT };
-static uint8_t itf_kind[MAX_DEV][MAX_ITF];
+// fixed-layout pads, from frank-snes' measured maps
+typedef struct { uint8_t byte, mask; } pad_bit_t;
+typedef struct {
+  uint16_t vid, pid;
+  bool hat;                  // false: axes at dx/dy (0x7f centre), true: hat in low nibble of dx
+  uint8_t dx, dy;
+  pad_bit_t fire[6];         // A B X Y L R
+  pad_bit_t start, select;
+} pad_map_t;
+
+#define SNES_CLONE_BUTTONS \
+  { {5,0x20}, {5,0x40}, {5,0x10}, {5,0x80}, {6,0x01}, {6,0x02} }, {6,0x20}, {6,0x10}
+
+static const pad_map_t pad_maps[] = {
+  { 0x0079, 0x0006, false, 0, 1, SNES_CLONE_BUTTONS },   // DragonRise "USB Gamepad"
+  { 0x081f, 0xe401, false, 0, 1, SNES_CLONE_BUTTONS },   // SNES clone
+  { 0x0810, 0xe501, false, 3, 4, SNES_CLONE_BUTTONS },   // SNES clone variant (infones)
+  { 0x046d, 0xc219, true,  5, 0, SNES_CLONE_BUTTONS },   // Logitech
+  { 0x11ff, 0x3331, false, 0, 1,
+    { {5,0x80}, {5,0x40}, {5,0x20}, {5,0x10}, {6,0x04}, {6,0x08} }, {6,0x20}, {6,0x10} },
+  { 0x2563, 0x0575, true,  2, 0,
+    { {0,0x04}, {0,0x02}, {0,0x08}, {0,0x01}, {0,0x10}, {0,0x20} }, {1,0x02}, {1,0x01} },
+  { 0xfeed, 0x2320, true,  5, 0,
+    { {6,0x01}, {6,0x02}, {6,0x08}, {6,0x04}, {6,0x10}, {6,0x20} }, {7,0x08}, {7,0x04} },
+};
+
+static const pad_map_t *itf_map[MAX_DEV][MAX_ITF];
 static uint8_t raw_dumps[MAX_DEV][MAX_ITF];   // raw reports printed so far
 #define RAW_DUMP_MAX  16
 
@@ -60,6 +91,7 @@ const usb_status_t *usb_input_status(void) {
 
 /* ---------------------------- serial console ---------------------------- */
 
+#if !GALAGINO_USB_NATIVE
 static void cdc_out_chars(const char *buf, int len) {
   if(!tud_cdc_connected()) return;
   // never wait for the host: drop what doesn't fit (printf may run in IRQs)
@@ -75,10 +107,15 @@ static stdio_driver_t cdc_stdio_drv = {
   .crlf_enabled = PICO_STDIO_DEFAULT_CRLF,
 #endif
 };
+#endif
 
 /* --------------------------------- setup -------------------------------- */
 
 void usb_input_init(void) {
+#if GALAGINO_USB_NATIVE
+  // native USB-C port as host, like frank-snes; no serial console
+  tuh_init(0);
+#else
   pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
   pio_cfg.pin_dp     = PICO_DEFAULT_PIO_USB_DP_PIN;   // GP28
   pio_cfg.pio_tx_num = 1;
@@ -89,11 +126,14 @@ void usb_input_init(void) {
 
   tud_init(0);
   stdio_set_driver_enabled(&cdc_stdio_drv, true);
+#endif
 }
 
 void usb_input_task(void) {
   tuh_task();
+#if !GALAGINO_USB_NATIVE
   tud_task();
+#endif
 }
 
 unsigned char usb_input_buttons(void) {
@@ -212,19 +252,29 @@ static unsigned char parse_gamepad(HID_ReportInfo_t *info, const uint8_t *report
   return b;
 }
 
-// cheap SNES clones, raw layout from pico-infonesPlus hid_app.cpp (MantaPadReport)
-static unsigned char parse_manta(const uint8_t *r, bool variant) {
-  unsigned char b = 0;
-  uint8_t lr = variant ? r[3] : r[0];     // 0x00 left, 0xff right
-  uint8_t ud = variant ? r[4] : r[1];     // 0x00 up, 0xff down
-  if(lr == 0x00) b |= BUTTON_LEFT;
-  if(lr == 0xff) b |= BUTTON_RIGHT;
-  if(ud == 0x00) b |= BUTTON_UP;
-  if(ud == 0xff) b |= BUTTON_DOWN;
-  if(r[5] & 0xf0) b |= BUTTON_FIRE;       // X 0x10, A 0x20, B 0x40, Y 0x80
-  if(r[6] & 0x03) b |= BUTTON_FIRE;       // L 0x01, R 0x02
+static inline bool pad_bit(const uint8_t *r, uint16_t len, pad_bit_t b) {
+  return b.byte < len && (r[b.byte] & b.mask);
+}
 
-  bool select = r[6] & 0x10, start = r[6] & 0x20;
+// fixed-layout pads, decoded like frank-snes' process_gamepad_report()
+static unsigned char parse_mapped(const pad_map_t *m, const uint8_t *r, uint16_t len) {
+  unsigned char b = 0;
+  if(!m->hat) {
+    if(m->dx < len && r[m->dx] < 0x40) b |= BUTTON_LEFT;
+    if(m->dx < len && r[m->dx] > 0xc0) b |= BUTTON_RIGHT;
+    if(m->dy < len && r[m->dy] < 0x40) b |= BUTTON_UP;
+    if(m->dy < len && r[m->dy] > 0xc0) b |= BUTTON_DOWN;
+  } else if(m->dx < len) {
+    static const unsigned char hat_dirs[8] = {
+      BUTTON_UP, BUTTON_UP | BUTTON_RIGHT, BUTTON_RIGHT, BUTTON_DOWN | BUTTON_RIGHT,
+      BUTTON_DOWN, BUTTON_DOWN | BUTTON_LEFT, BUTTON_LEFT, BUTTON_UP | BUTTON_LEFT };
+    uint8_t h = r[m->dx] & 0x0f;
+    if(h < 8) b |= hat_dirs[h];
+  }
+  for(int i=0;i<6;i++)
+    if(pad_bit(r, len, m->fire[i])) b |= BUTTON_FIRE;
+
+  bool select = pad_bit(r, len, m->select), start = pad_bit(r, len, m->start);
   if(select && start) b |= BUTTON_EXTRA;
   else {
     if(select) b |= BUTTON_COIN;
@@ -293,18 +343,19 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const *desc_re
   if(dev_addr < MAX_DEV && instance < MAX_ITF) {
     itf_buttons[dev_addr][instance] = 0;
     raw_dumps[dev_addr][instance] = 0;
-    itf_kind[dev_addr][instance] =
-      (vid == 0x081f && pid == 0xe401) ? PAD_MANTA :
-      (vid == 0x0810 && pid == 0xe501) ? PAD_MANTA_VARIANT : PAD_GENERIC;
-    if(itf_kind[dev_addr][instance] != PAD_GENERIC) {
-      printf("usb: cheap SNES clone, using its raw report layout\n");
+    itf_map[dev_addr][instance] = NULL;
+    for(unsigned i=0;i<sizeof(pad_maps)/sizeof(pad_maps[0]);i++)
+      if(pad_maps[i].vid == vid && pad_maps[i].pid == pid)
+        itf_map[dev_addr][instance] = &pad_maps[i];
+    if(itf_map[dev_addr][instance]) {
+      printf("usb: known pad, using its measured report layout\n");
       status.decoder = 2;
     }
 
     if(proto == HID_ITF_PROTOCOL_KEYBOARD) {
       tuh_hid_set_protocol(dev_addr, instance, HID_PROTOCOL_BOOT);
       status.decoder = 3;
-    } else if(proto == HID_ITF_PROTOCOL_NONE && itf_kind[dev_addr][instance] == PAD_GENERIC) {
+    } else if(proto == HID_ITF_PROTOCOL_NONE && !itf_map[dev_addr][instance]) {
       if(pad_info[dev_addr][instance]) USB_FreeReportInfo(pad_info[dev_addr][instance]);
       pad_info[dev_addr][instance] = NULL;
       if(USB_ProcessHIDReport(desc_report, desc_len, &pad_info[dev_addr][instance]) != HID_PARSE_Successful) {
@@ -338,12 +389,12 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t cons
     uint8_t proto = tuh_hid_interface_protocol(dev_addr, instance);
     unsigned char b = itf_buttons[dev_addr][instance];
 
-    uint8_t kind = itf_kind[dev_addr][instance];
+    const pad_map_t *map = itf_map[dev_addr][instance];
     raw_buttons = 0;
     if(proto == HID_ITF_PROTOCOL_KEYBOARD && len >= sizeof(hid_keyboard_report_t))
       b = parse_keyboard((const hid_keyboard_report_t *)report);
-    else if(kind != PAD_GENERIC && len >= 8)
-      b = parse_manta(report, kind == PAD_MANTA_VARIANT);
+    else if(map)
+      b = parse_mapped(map, report, len);
     else if(pad_info[dev_addr][instance])
       b = parse_gamepad(pad_info[dev_addr][instance], report);
 
