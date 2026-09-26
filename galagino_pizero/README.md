@@ -8,8 +8,8 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
 |---|---|
 | `main.cpp` | Core 1: DVI scanout. Core 0: emulation, drawing, pacing, HDMI audio, stats |
 | `pad.c` | NES Classic Mini controller over I2C1 (SDA GP2, SCL GP3), 3.3 V |
-| `usb_input.c` | USB gamepads/keyboards via PIO-USB (D+ GP28), and the USB-C serial console |
-| `tusb_config.h`, `usb_descriptors.c` | TinyUSB: CDC device on native USB, host on PIO-USB (as in tiny_agi) |
+| `usb_input.c` | USB gamepads/keyboards on the native USB-C port (TinyUSB host) |
+| `tusb_config.h` | TinyUSB host configuration |
 | `hidparser/` | LUFA-derived HID report descriptor parser, from msx2pico |
 | `font_8x8.h` | 8×8 font for the on-screen diagnostics (pico-infonesPlus, via msx2pico) |
 | `pizero_config.h` | Force-included build config. Defines `_CONFIG_H_` so the CYD `config.h` is skipped |
@@ -22,13 +22,15 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   4:3/aspect setting. TVs usually honour the InfoFrame or have a 4:3 mode. A software pre-squeeze
   (224 → 140 columns, blended) would be possible as a build option, but looks soft.
 - **USB keyboard works** on the PIO-USB port, even without 5 V (this keyboard runs on 3.3 V).
-- **USB gamepad (SNES clone `0079:0011`):** over PIO-USB nothing happened (not diagnosed further).
-  With **`galagino_pizero_native.uf2`** (native USB-C port, OTG Y-cable) it enumerates and sends
+- **USB gamepad (SNES clone `0079:0011`):** over PIO-USB nothing happened (not diagnosed further;
+  that variant has since been removed). On the **native USB-C port** it enumerates and sends
   reports (`01 7f 7f XX YY 0f 00 00`). The generic parser misread byte 0 as the stick (Left held
   constantly), so the pad now has a fixed map: frank-snes' fallback layout, d-pad in bytes 3/4.
   **Confirmed working (2026-09-26)**, and on the native USB-C port it also works **without the OTG
   cable**. On the port labelled "USB PIO" the pad doesn't work.
-- **Pac-Man timing (native build, on screen):** emulation 2.7 ms (max 2.8), draw 3.2 ms, 60 Hz,
+- **Bottom row possibly cut off** on the monitor (likely overscan, since the picture fills all
+  480 lines). Hence the adjustable border (Right in the menu); the right value isn't known yet.
+- **Pac-Man timing (on screen):** emulation 2.7 ms (max 2.8), draw 3.2 ms, 60 Hz,
   core 1 35%, 0 missed lines. Emulation is a bit above the ~2.0 ms scaled from the PicoCalc;
   `GALAGINO_FAST_FLASH` may close that. The same pad works in `~/Source/circle-libretro`
   on a Pi, which supplies 5 V. Most likely the pad doesn't run on 3.3 V. To confirm, check the
@@ -49,19 +51,6 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   late frames and is printed on serial.
 - **Audio:** HDMI audio at 48 kHz, linearly resampled from the core's 24 kHz (DK: 11,765 Hz).
   TVs reject non-standard rates, see msx2pico.
-
-## Two firmware variants
-
-| File | Gamepad port | Serial console |
-|---|---|---|
-| `build/galagino_pizero.uf2` | PIO-USB port (D+ GP28) | native USB-C (CDC) + UART0 |
-| `build/galagino_pizero_native.uf2` | **native USB-C port**, via OTG cable/hub, as frank-snes does | UART0 only (TX GP0) |
-
-**Use the native variant for USB gamepads.** The SNES-clone pad works on the native USB-C port
-(with or without an OTG cable) but not on the port labelled "USB PIO". The native variant was added
-because frank-snes, where the same pad works, also uses the native controller. With it, power the board through its other
-USB-C port or the 5 V header pin, since the native port is busy as host. The on-screen
-diagnostics show `USBNATIV` or `USB PIO` at the top left.
 
 ## Build
 
@@ -84,32 +73,23 @@ numbers in `plans/rp2350-port.md`.
 | Select | Coin |
 | Start | Start |
 | Select + Start (hold 1 s) | Back to the menu (reboots) |
+| Left (in the menu) | Diagnostics on/off |
+| Right (in the menu) | Top/bottom border 0 → 4 → 8 → 12 lines, for screens that crop the edges |
 
 The pad can be plugged in after power-up; it is retried twice a second.
 
 ## USB gamepad or keyboard
 
-Plug it into the PiZero's **PIO-USB port** (D+ on GP28, the USB-C port that isn't the native
-one). **It needs 5 V from elsewhere:** the board doesn't power its USB ports. Use a powered hub,
-or an OTG adapter with a power input. Some devices run on the 3.3 V that's there (a keyboard did);
-the SNES-clone gamepad tested so far didn't.
+Plug it into the **native USB-C port** (not the one labelled "USB PIO"); an OTG cable isn't
+needed for the SNES-clone pad. Power the board through its other USB-C port or the 5 V pin.
 
-- **Generic HID gamepads** (DirectInput style, most cheap/retro USB pads): d-pad, hat or stick
-  moves. Buttons 1–6 fire, 7 or 9 coin (select), 8 or 10 start. Coin + start held 1 s returns to
-  the menu. Pads differ: the console prints `usb: galagino buttons 0x.., pad buttons 3 9` on
-  every change, so a wrong mapping can be fixed in the `PAD_*` defines in `usb_input.c`.
 - **Known pads** are decoded from fixed byte positions measured for frank-snes
-  (`~/Source/frank-snes/gamepads`): `0079:0006`, `081f:e401` (SNES clones), `11ff:3331`,
-  `046d:c219`, `2563:0575`, `feed:2320`, plus `0810:e501` from pico-infonesPlus. Cheap SNES
-  clones don't describe themselves reliably, so descriptor parsing isn't used for these.
+  (`~/Source/frank-snes/gamepads`): `0079:0006`, `0079:0011`, `081f:e401` (SNES clones),
+  `11ff:3331`, `046d:c219`, `2563:0575`, `feed:2320`, plus `0810:e501` from pico-infonesPlus.
+- **Other HID gamepads** are decoded from their report descriptor (hat, stick or d-pad; buttons
+  1–6 fire, 7/9 coin, 8/10 start). If one misbehaves, the diagnostics show its USB ID and raw
+  reports, which is what a fixed map needs.
 - **XInput (Xbox style) pads** are not supported.
-
-**If a pad does nothing,** watch the console while plugging it in:
-- No `usb: device … mounted, vvvv:pppp` line: power or enumeration. A plain OTG cable adds no
-  power; it needs a power input or a powered hub.
-- Mounted, but pressing buttons prints no `galagino buttons` lines: the decoding is wrong. The
-  console shows the pad's USB ID and its first raw reports (`usb: raw report …`), which is what
-  a new quirk needs.
 - **USB keyboards:** arrows move, Space/Ctrl/Z/X fire, 5 or C coin, 1 or Enter start, Esc (hold)
   menu.
 
@@ -123,8 +103,9 @@ The USB pad, keyboard and I2C pad can be used together.
 
 ## On-screen diagnostics
 
-With `SHOW_OVERLAY` (on by default in `pizero_config.h`), the black margins beside the game show
-live diagnostics, so no serial console is needed:
+The black margins beside the game show live diagnostics, so no serial console is needed. Press
+Left in the game menu to hide or show them. `SHOW_OVERLAY` in `pizero_config.h` sets whether they
+start on, and `DVI_BORDER` the starting top/bottom border (Right in the menu cycles it).
 
 | Left margin | Right margin (USB) |
 |---|---|
@@ -140,8 +121,7 @@ one from pico-infonesPlus (via msx2pico), kept in RAM so core 1 never waits on f
 
 ## Serial output (every 2 s)
 
-On the native USB-C port (a small CDC driver in `usb_input.c`, since the SDK disables its USB
-stdio when the TinyUSB host is linked), and on UART0 TX (GP0, 115200) as a backup.
+On UART0 TX (GP0, 115200); the native USB port is busy as the gamepad host.
 
 
 ```

@@ -35,72 +35,54 @@ set_source_files_properties(${GALAGINO}/emulation.c PROPERTIES
     COMPILE_OPTIONS "-include;${COMMON}/esp32_compat.h"
 )
 
-# galagino_pizero:        USB gamepads on the PIO-USB port, serial console on USB-C
-# galagino_pizero_native: USB gamepads on the native USB-C port (like frank-snes),
-#                         no serial console; use the on-screen diagnostics
-function(galagino_pizero_target target native)
-  add_executable(${target}
-      main.cpp
-      pad.c
-      usb_input.c
-      hidparser/hidparser.c
-      ${COMMON}/galagino_core.c
-      ${GALAGINO}/Z80.c
-      ${GALAGINO}/i8048.c
-      ${GALAGINO}/emulation.c
-  )
-  if(NOT native)
-    target_sources(${target} PRIVATE usb_descriptors.c)
-  endif()
+add_executable(galagino_pizero
+    main.cpp
+    pad.c
+    usb_input.c
+    hidparser/hidparser.c
+    ${COMMON}/galagino_core.c
+    ${GALAGINO}/Z80.c
+    ${GALAGINO}/i8048.c
+    ${GALAGINO}/emulation.c
+)
 
-  target_include_directories(${target} PRIVATE
-      ${CMAKE_CURRENT_LIST_DIR}
-      ${COMMON}
-      ${GALAGINO}
-      ${CMAKE_CURRENT_LIST_DIR}/pico_lib
-  )
+target_include_directories(galagino_pizero PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}
+    ${COMMON}
+    ${GALAGINO}
+    ${CMAKE_CURRENT_LIST_DIR}/pico_lib
+)
 
-  # pizero_config.h defines _CONFIG_H_, which turns the CYD config.h in
-  # ../galagino into a no-op wherever it is included.
-  target_compile_options(${target} PRIVATE
-      -include ${CMAKE_CURRENT_LIST_DIR}/pizero_config.h
-      -O2
-  )
+# pizero_config.h defines _CONFIG_H_, which turns the CYD config.h in
+# ../galagino into a no-op wherever it is included.
+target_compile_options(galagino_pizero PRIVATE
+    -include ${CMAKE_CURRENT_LIST_DIR}/pizero_config.h
+    -O2
+)
 
-  target_compile_definitions(${target} PRIVATE
-      PICO_PIO_USE_GPIO_BASE=1     # TMDS pins are GPIO 32-38
-      PICO_DEFAULT_PIO_USB_DP_PIN=28
-      CFG_TUSB_CONFIG_FILE="tusb_config.h"
-      GALAGINO_USB_NATIVE=$<BOOL:${native}>
-  )
+target_compile_definitions(galagino_pizero PRIVATE
+    PICO_PIO_USE_GPIO_BASE=1     # TMDS pins are GPIO 32-38
+    CFG_TUSB_CONFIG_FILE="tusb_config.h"
+)
 
-  target_link_libraries(${target} PRIVATE
-      pico_stdlib
-      pico_multicore
-      hardware_dma
-      hardware_pio
-      hardware_interp
-      hardware_i2c
-      hardware_vreg
-      hardware_clocks
-      hardware_watchdog
-      pico_rand
-      dvi
-      util
-      tinyusb_host
-  )
-  if(NOT native)
-    target_link_libraries(${target} PRIVATE tinyusb_device tinyusb_pico_pio_usb)
-  endif()
+target_link_libraries(galagino_pizero PRIVATE
+    pico_stdlib
+    pico_multicore
+    hardware_dma
+    hardware_pio
+    hardware_interp
+    hardware_i2c
+    hardware_vreg
+    hardware_clocks
+    hardware_watchdog
+    pico_rand
+    dvi
+    util
+    tinyusb_host
+)
 
-  # The SDK disables its USB stdio when the TinyUSB host is linked;
-  # usb_input.c provides the USB serial console instead (PIO-USB build).
-  # UART0 (GP0) as backup in both.
-  pico_enable_stdio_usb(${target} 0)
-  pico_enable_stdio_uart(${target} 1)
+# The native USB port is the gamepad host, so stdio goes to UART0 (TX GP0).
+pico_enable_stdio_usb(galagino_pizero 0)
+pico_enable_stdio_uart(galagino_pizero 1)
 
-  pico_add_extra_outputs(${target})
-endfunction()
-
-galagino_pizero_target(galagino_pizero FALSE)
-galagino_pizero_target(galagino_pizero_native TRUE)
+pico_add_extra_outputs(galagino_pizero)

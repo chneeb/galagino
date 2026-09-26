@@ -44,8 +44,11 @@ void galagino_idle(unsigned ms);
 #define SRC_H   288
 #define LINE_W  320          // pico_lib line buffer, doubled to 640 on screen
 #define LINES   240          // unique lines, each shown twice
-#define DST_W   187          // 224 * 240 / 288, keeps the arcade's shape
-#define DST_X   ((LINE_W - DST_W) / 2)
+#define DST_W_MAX 187        // 224 * 240 / 288: picture width without a border
+
+// from emulation.h, which isn't valid C++
+#define BUTTON_LEFT   0x01
+#define BUTTON_RIGHT  0x02
 
 #define HDMI_AUDIO_RATE  48000
 
@@ -54,7 +57,7 @@ void galagino_idle(unsigned ms);
 #define OV_COLS   8
 #define OV_ROWS   (LINES / 8)
 #define OV_LEFT_X   1
-#define OV_RIGHT_X  (DST_X + DST_W + 1)
+#define OV_RIGHT_X  (LINE_W - OV_COLS * 8 - 2)
 #define AUDIO_VOLUME     40  // core samples are about +/- 512
 
 // Waveshare RP2350-PiZero, as in pico-infonesPlus dvi_configs.h and msx2pico
@@ -74,9 +77,27 @@ static volatile int scanning = 0;   // screen core 1 is showing
 
 /* -------------------------------- core 1 -------------------------------- */
 
-static uint8_t xmap[DST_W];         // source column per output column
-
+// Set by core 0 (in the menu: Left toggles the diagnostics, Right cycles the
+// border), picked up by core 1 once per frame
 #ifdef SHOW_OVERLAY
+static volatile bool overlay_on = true;
+#else
+static volatile bool overlay_on = false;
+#endif
+static volatile int border = DVI_BORDER;   // black lines at top and bottom
+
+// core 1's current geometry, derived from border
+static uint8_t xmap[DST_W_MAX];     // source column per output column
+static int geo_border = -1, geo_w, geo_x;
+
+static void __not_in_flash_func(set_geometry)(int b) {
+  int lines = LINES - 2 * b;
+  geo_w = (SRC_W * lines + SRC_H / 2) / SRC_H;   // keeps the arcade's shape
+  geo_x = (LINE_W - geo_w) / 2;
+  for(int x=0;x<geo_w;x++) xmap[x] = x * (SRC_W-1) / (geo_w-1);
+  geo_border = b;
+}
+
 #include "font_8x8.h"              // 95 glyphs, row-major across glyphs, LSB = left
 static uint8_t font_ram[95 * 8];   // RAM copy: core 1 must never wait on flash
 static_assert(sizeof(font_8x8) == sizeof(font_ram), "font_8x8.h must hold 95 glyphs x 8 rows");
@@ -98,7 +119,6 @@ static void __not_in_flash_func(ov_draw_line)(uint16_t *dst, int y) {
     }
   }
 }
-#endif
 
 // big endian RGB565 -> RGB555 as pico_lib's encoder wants it
 static inline uint16_t to555(uint16_t be) {
@@ -113,17 +133,23 @@ static void __not_in_flash_func(core1_main)(void) {
   while(true) {
     int b = front;                  // latched once per frame
     scanning = b;
+    if(border != geo_border) set_geometry(border);
+    const int first = geo_border, lines = LINES - 2 * geo_border;
+    const bool ov = overlay_on;
+
     for(int y=0;y<LINES;y++) {
       dvi::DVI::LineBuffer *lb = dvi_inst->getLineBuffer();
       uint16_t *dst = lb->data();
-      const uint16_t *src = screen[b][y * (SRC_H-1) / (LINES-1)];
 
-      memset(dst, 0, DST_X * 2);
-      for(int x=0;x<DST_W;x++) dst[DST_X + x] = to555(src[xmap[x]]);
-      memset(dst + DST_X + DST_W, 0, (LINE_W - DST_X - DST_W) * 2);
-#ifdef SHOW_OVERLAY
-      ov_draw_line(dst, y);
-#endif
+      if(y < first || y >= first + lines)
+        memset(dst, 0, LINE_W * 2);
+      else {
+        const uint16_t *src = screen[b][(y - first) * (SRC_H-1) / (lines-1)];
+        memset(dst, 0, geo_x * 2);
+        for(int x=0;x<geo_w;x++) dst[geo_x + x] = to555(src[xmap[x]]);
+        memset(dst + geo_x + geo_w, 0, (LINE_W - geo_x - geo_w) * 2);
+      }
+      if(ov) ov_draw_line(dst, y);
 
       dvi_inst->setLineBuffer(y, lb);
       dvi_inst->convertScanBuffer15bpp();
@@ -253,7 +279,6 @@ static void print_stats(void) {
 
 /* ------------------------------- overlay -------------------------------- */
 
-#ifdef SHOW_OVERLAY
 #define OV_LABEL  0x03ff   // cyan (RGB555)
 #define OV_VALUE  0x7fff   // white
 #define OV_WARN   0x7c1f   // magenta
@@ -279,11 +304,7 @@ static void overlay_update(void) {
   int r = 0;
   // left: this board and timings
   ov_set(0, r++, OV_LABEL, "GALAGINO");
-#if GALAGINO_USB_NATIVE
-  ov_set(0, r++, OV_LABEL, "USBNATIV");
-#else
-  ov_set(0, r++, OV_LABEL, "USB PIO");
-#endif
+  ov_set(0, r++, OV_LABEL, "PIZERO");
   r++;
   ov_set(0, r++, OV_LABEL, "VIDEO");
   ov_set(0, r++, OV_VALUE, "%s", half_rate ? "30HZ" : "60HZ");
@@ -300,6 +321,9 @@ static void overlay_update(void) {
   ov_set(0, r++, pad_connected() ? OV_VALUE : OV_WARN, "%s", pad_connected() ? "OK" : "NONE");
   ov_set(0, r++, OV_LABEL, "BUTTONS");
   ov_set(0, r++, OV_VALUE, "%02X", platform_buttons());
+  r++;
+  ov_set(0, r++, OV_LABEL, "BORDER");
+  ov_set(0, r++, OV_VALUE, "%d", border);
 
   // right: USB
   const usb_status_t *u = usb_input_status();
@@ -327,7 +351,24 @@ static void overlay_update(void) {
   ov_set(1, r++, OV_LABEL, "USB BTN");
   ov_set(1, r++, OV_VALUE, "%02X", usb_input_buttons());
 }
+
+// in the menu: Left toggles the diagnostics, Right cycles the top/bottom
+// border (0, 4, 8, 12 lines) for screens that crop the picture's edges
+static void menu_keys(void) {
+#ifndef SINGLE_MACHINE
+  static unsigned char last = 0;
+  unsigned char k = platform_buttons();
+  if(machine == 0) {                  // MCH_MENU
+    if((k & BUTTON_LEFT) && !(last & BUTTON_LEFT)) {
+      if(!overlay_on) memset(ov_text, ' ', sizeof(ov_text));
+      overlay_on = !overlay_on;
+    }
+    if((k & BUTTON_RIGHT) && !(last & BUTTON_RIGHT))
+      border = (border + 4) % 16;
+  }
+  last = k;
 #endif
+}
 
 /* ------------------------- emulation frame hooks ------------------------ */
 
@@ -345,9 +386,8 @@ static void between_frames(void) {
   usb_input_task();
   audio_fill();
   print_stats();
-#ifdef SHOW_OVERLAY
-  if((frame_count & 7) == 0) overlay_update();
-#endif
+  menu_keys();
+  if(overlay_on && (frame_count & 7) == 0) overlay_update();
 }
 
 // called by emulate_frame() (via ulTaskNotifyTake in esp32_compat.h) once
@@ -408,11 +448,8 @@ int main(void) {
   stdio_init_all();
   printf("Galagino RP2350-PiZero: sys %lu Hz\n", clock_get_hz(clk_sys));
 
-  for(int x=0;x<DST_W;x++) xmap[x] = x * (SRC_W-1) / (DST_W-1);
-#ifdef SHOW_OVERLAY
   memcpy(font_ram, font_8x8, sizeof(font_ram));
   memset(ov_text, ' ', sizeof(ov_text));
-#endif
 
   pad_init();
   prepare_emulation();       // allocates memory[], resets the CPUs
@@ -427,7 +464,7 @@ int main(void) {
 #endif
 
   multicore_launch_core1(core1_main);
-  usb_input_init();          // after DVI, which claims DMA channels 0-5
+  usb_input_init();
   audio_fill();
   last_dvi_frame = dvi_inst->getFrameCounter();
 

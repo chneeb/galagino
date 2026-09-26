@@ -14,8 +14,14 @@
 // a game session switches to 30 Hz once 60 Hz can't keep up (Digdug).
 // #define VIDEO_HALF_RATE
 
-// Diagnostics in the black margins beside the game: timings, I2C pad and
-// USB device state (IDs, raw reports), so no serial console is needed.
+// Diagnostics in the black margins beside the game (timings, pad and USB
+// state). Left in the game menu toggles them; comment this out to start
+// with them off.
 #define SHOW_OVERLAY
+
+// Black border at the top and bottom, in source lines (0, 4, 8 or 12), for
+// screens that crop the picture's edges. The picture shrinks to keep its
+// shape. Right in the game menu cycles through the values.
+#define DVI_BORDER 0
 
 #endif // _CONFIG_H_

@@ -1,12 +1,10 @@
 /*
- * usb_input.c - USB gamepads and keyboards via PIO-USB, serial via USB-C
+ * usb_input.c - USB gamepads and keyboards on the native USB-C port
  *
- * Setup follows tiny_agi's RP2350-PiZero DVI target: TinyUSB host on
- * PIO-USB (pio1, D+ on GP28, DMA channel 7, since DVI claims 0-5) and a CDC
- * device on the native controller for the console. The SDK's own USB stdio
- * is disabled when the TinyUSB host is linked, so a small stdio driver
- * sends printf() output to the CDC port. No board_init(), which would
- * reset the 252 MHz clock DVI needs.
+ * TinyUSB host on the native USB controller, as frank-snes does. An
+ * earlier PIO-USB variant (port labelled "USB PIO", as in tiny_agi) didn't
+ * work with the SNES-clone pad and was dropped. No board_init(), which
+ * would reset the 252 MHz clock DVI needs.
  *
  * Gamepads are decoded generically from their HID report descriptor (the
  * LUFA-derived parser from msx2pico): hat switch, X/Y axes or d-pad usages
@@ -17,9 +15,6 @@
  * measured for frank-snes (drivers/usbhid/hid_app.c, gamepads/*.txt): cheap
  * SNES clones don't describe themselves reliably. 0810:e501 comes from
  * pico-infonesPlus (hid_app.cpp).
- *
- * GALAGINO_USB_NATIVE: host on the native USB-C port instead (as frank-snes
- * does), no PIO-USB and no USB serial console.
  */
 
 #include "usb_input.h"
@@ -28,11 +23,7 @@
 #include <string.h>
 
 #include "pico/stdlib.h"
-#include "pico/stdio/driver.h"
 #include "tusb.h"
-#if !GALAGINO_USB_NATIVE
-#include "pio_usb.h"
-#endif
 #include "hidparser/hidparser.h"
 
 #include "Z80.h"          // pulls in emulation.h for the BUTTON_* bits
@@ -92,51 +83,14 @@ const usb_status_t *usb_input_status(void) {
   return &status;
 }
 
-/* ---------------------------- serial console ---------------------------- */
-
-#if !GALAGINO_USB_NATIVE
-static void cdc_out_chars(const char *buf, int len) {
-  if(!tud_cdc_connected()) return;
-  // never wait for the host: drop what doesn't fit (printf may run in IRQs)
-  uint32_t avail = tud_cdc_write_available();
-  uint32_t n = (uint32_t)len < avail ? (uint32_t)len : avail;
-  if(n) tud_cdc_write(buf, n);
-  tud_cdc_write_flush();
-}
-
-static stdio_driver_t cdc_stdio_drv = {
-  .out_chars = cdc_out_chars,
-#if PICO_STDIO_ENABLE_CRLF_SUPPORT
-  .crlf_enabled = PICO_STDIO_DEFAULT_CRLF,
-#endif
-};
-#endif
-
 /* --------------------------------- setup -------------------------------- */
 
 void usb_input_init(void) {
-#if GALAGINO_USB_NATIVE
-  // native USB-C port as host, like frank-snes; no serial console
   tuh_init(0);
-#else
-  pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
-  pio_cfg.pin_dp     = PICO_DEFAULT_PIO_USB_DP_PIN;   // GP28
-  pio_cfg.pio_tx_num = 1;
-  pio_cfg.pio_rx_num = 1;
-  pio_cfg.tx_ch      = 7;
-  tuh_configure(1, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
-  tuh_init(1);
-
-  tud_init(0);
-  stdio_set_driver_enabled(&cdc_stdio_drv, true);
-#endif
 }
 
 void usb_input_task(void) {
   tuh_task();
-#if !GALAGINO_USB_NATIVE
-  tud_task();
-#endif
 }
 
 unsigned char usb_input_buttons(void) {
