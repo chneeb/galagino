@@ -12,6 +12,10 @@
  * LUFA-derived parser from msx2pico): hat switch, X/Y axes or d-pad usages
  * give directions, button usages give fire, coin and start. Boot protocol
  * keyboards work too. XInput (Xbox style) pads are not supported.
+ *
+ * Cheap AliExpress SNES clones (081f:e401 and 0810:e501) are decoded from
+ * their raw 8 byte reports instead, as pico-infonesPlus does (hid_app.cpp),
+ * since generic descriptor parsing doesn't work for them there either.
  */
 
 #include "usb_input.h"
@@ -42,6 +46,11 @@
 static HID_ReportInfo_t *pad_info[MAX_DEV][MAX_ITF];
 static unsigned char itf_buttons[MAX_DEV][MAX_ITF];
 static uint32_t raw_buttons;   // pressed gamepad button usages, bit n = button n+1
+
+enum { PAD_GENERIC, PAD_MANTA, PAD_MANTA_VARIANT };
+static uint8_t itf_kind[MAX_DEV][MAX_ITF];
+static uint8_t raw_dumps[MAX_DEV][MAX_ITF];   // raw reports printed so far
+#define RAW_DUMP_MAX  16
 
 /* ---------------------------- serial console ---------------------------- */
 
@@ -197,6 +206,27 @@ static unsigned char parse_gamepad(HID_ReportInfo_t *info, const uint8_t *report
   return b;
 }
 
+// cheap SNES clones, raw layout from pico-infonesPlus hid_app.cpp (MantaPadReport)
+static unsigned char parse_manta(const uint8_t *r, bool variant) {
+  unsigned char b = 0;
+  uint8_t lr = variant ? r[3] : r[0];     // 0x00 left, 0xff right
+  uint8_t ud = variant ? r[4] : r[1];     // 0x00 up, 0xff down
+  if(lr == 0x00) b |= BUTTON_LEFT;
+  if(lr == 0xff) b |= BUTTON_RIGHT;
+  if(ud == 0x00) b |= BUTTON_UP;
+  if(ud == 0xff) b |= BUTTON_DOWN;
+  if(r[5] & 0xf0) b |= BUTTON_FIRE;       // X 0x10, A 0x20, B 0x40, Y 0x80
+  if(r[6] & 0x03) b |= BUTTON_FIRE;       // L 0x01, R 0x02
+
+  bool select = r[6] & 0x10, start = r[6] & 0x20;
+  if(select && start) b |= BUTTON_EXTRA;
+  else {
+    if(select) b |= BUTTON_COIN;
+    if(start)  b |= BUTTON_START;
+  }
+  return b;
+}
+
 /* ------------------------------- keyboards ------------------------------ */
 
 static unsigned char parse_keyboard(const hid_keyboard_report_t *r) {
@@ -227,12 +257,21 @@ static unsigned char parse_keyboard(const hid_keyboard_report_t *r) {
 
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const *desc_report, uint16_t desc_len) {
   uint8_t proto = tuh_hid_interface_protocol(dev_addr, instance);
-  printf("usb: device %d interface %d mounted (%s)\n", dev_addr, instance,
+  uint16_t vid = 0, pid = 0;
+  tuh_vid_pid_get(dev_addr, &vid, &pid);
+  printf("usb: device %d interface %d mounted, %04x:%04x (%s)\n", dev_addr, instance, vid, pid,
          proto == HID_ITF_PROTOCOL_KEYBOARD ? "keyboard" :
          proto == HID_ITF_PROTOCOL_MOUSE ? "mouse" : "other HID");
 
   if(dev_addr < MAX_DEV && instance < MAX_ITF) {
     itf_buttons[dev_addr][instance] = 0;
+    raw_dumps[dev_addr][instance] = 0;
+    itf_kind[dev_addr][instance] =
+      (vid == 0x081f && pid == 0xe401) ? PAD_MANTA :
+      (vid == 0x0810 && pid == 0xe501) ? PAD_MANTA_VARIANT : PAD_GENERIC;
+    if(itf_kind[dev_addr][instance] != PAD_GENERIC)
+      printf("usb: cheap SNES clone, using its raw report layout\n");
+
     if(proto == HID_ITF_PROTOCOL_KEYBOARD)
       tuh_hid_set_protocol(dev_addr, instance, HID_PROTOCOL_BOOT);
     else if(proto == HID_ITF_PROTOCOL_NONE) {
@@ -263,11 +302,27 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t cons
     uint8_t proto = tuh_hid_interface_protocol(dev_addr, instance);
     unsigned char b = itf_buttons[dev_addr][instance];
 
+    uint8_t kind = itf_kind[dev_addr][instance];
     raw_buttons = 0;
     if(proto == HID_ITF_PROTOCOL_KEYBOARD && len >= sizeof(hid_keyboard_report_t))
       b = parse_keyboard((const hid_keyboard_report_t *)report);
+    else if(kind != PAD_GENERIC && len >= 8)
+      b = parse_manta(report, kind == PAD_MANTA_VARIANT);
     else if(pad_info[dev_addr][instance])
       b = parse_gamepad(pad_info[dev_addr][instance], report);
+
+    // raw reports from non-keyboards, to diagnose pads that don't decode
+    if(proto != HID_ITF_PROTOCOL_KEYBOARD && raw_dumps[dev_addr][instance] < RAW_DUMP_MAX) {
+      static uint8_t last[16];
+      uint16_t n = len < sizeof(last) ? len : sizeof(last);
+      if(memcmp(last, report, n)) {
+        memcpy(last, report, n);
+        raw_dumps[dev_addr][instance]++;
+        printf("usb: raw report (%d bytes):", len);
+        for(int i=0;i<n;i++) printf(" %02x", report[i]);
+        printf("\n");
+      }
+    }
 
     static uint32_t last_raw;
     if(b != itf_buttons[dev_addr][instance] || raw_buttons != last_raw) {

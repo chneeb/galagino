@@ -21,7 +21,8 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
   4:3/aspect setting. TVs usually honour the InfoFrame or have a 4:3 mode. A software pre-squeeze
   (224 → 140 columns, blended) would be possible as a build option, but looks soft.
 - **USB keyboard works** on the PIO-USB port, even without 5 V (this keyboard runs on 3.3 V).
-- **USB gamepad (cheap SNES clone) does nothing.** The same pad works in `~/Source/circle-libretro`
+- **USB gamepad (cheap SNES clone) does nothing**, also through a USB-C OTG cable (which adds no
+  power unless it has a power input). The same pad works in `~/Source/circle-libretro`
   on a Pi, which supplies 5 V. Most likely the pad doesn't run on 3.3 V. To confirm, check the
   console for `usb: device … mounted` when plugging it in; no line means power/enumeration.
   The mapping should already fit: circle-libretro's notes give this pad's buttons as
@@ -76,7 +77,16 @@ the SNES-clone gamepad tested so far didn't.
   moves. Buttons 1–6 fire, 7 or 9 coin (select), 8 or 10 start. Coin + start held 1 s returns to
   the menu. Pads differ: the console prints `usb: galagino buttons 0x.., pad buttons 3 9` on
   every change, so a wrong mapping can be fixed in the `PAD_*` defines in `usb_input.c`.
+- **Cheap AliExpress SNES clones** with USB ID `081f:e401` or `0810:e501` are decoded from their
+  raw reports (layout from pico-infonesPlus), since their descriptors mislead generic parsing.
 - **XInput (Xbox style) pads** are not supported.
+
+**If a pad does nothing,** watch the console while plugging it in:
+- No `usb: device … mounted, vvvv:pppp` line: power or enumeration. A plain OTG cable adds no
+  power; it needs a power input or a powered hub.
+- Mounted, but pressing buttons prints no `galagino buttons` lines: the decoding is wrong. The
+  console shows the pad's USB ID and its first raw reports (`usb: raw report …`), which is what
+  a new quirk needs.
 - **USB keyboards:** arrows move, Space/Ctrl/Z/X fire, 5 or C coin, 1 or Enter start, Esc (hold)
   menu.
 
