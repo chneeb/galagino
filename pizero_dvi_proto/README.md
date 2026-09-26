@@ -34,8 +34,14 @@ ninja -C build
   possibly a bug in the new direct path. No serial output taken.
 - **`proto_480_direct` works (2026-09-26):** 480 unique lines, stable, `BUSY 43%` (all encode,
   SIO encoder), `MISS 0`, 120 frames per 2 s, HDMI audio packets on. Complete border, all
-  columns, all rows (1.5× vertical, some rows doubled). `proto_480` (with core 1 conversion) not
-  yet reported.
+  columns, all rows (1.5× vertical, some rows doubled).
+- **`proto_480` (core 1 converts, via pico_lib's line-buffer queue) still fails:** red below
+  about the first third of the picture, `BUSY 8% MISS 47126` (390 of 432 lines per frame).
+  Core 1 is mostly waiting, not overloaded: once a line is late, pico_lib only resyncs when the
+  same line number comes round next frame, and meanwhile all TMDS buffers sit full. The trigger
+  isn't found; core 1's code is RAM-only (checked). **Conclusion: a 480-line port should use the
+  direct path**: core 0 converts each finished frame to encoder-ready RGB555 rows, and core 1 only
+  encodes.
 - **Retest (2026-09-26, rebuilt):** the first 480 attempts predate three fixes: core 1
   still ran flash code (red lines under XIP cache pressure), `pico_lib` used the slow interpolator
   TMDS encoder instead of the RP2350's SIO encoder (core 1 load 35% → 24% in the doubled mode),

@@ -111,7 +111,8 @@ when a buffer is queued.
   three layouts. **Update (2026-09-26, later): 480 unique lines WORK** once pico_lib uses the SIO
   TMDS encoder, core 1 is kept off flash, and the direct variant's line size bug is fixed:
   `proto_480_direct` = 43% core 1, 0 missed lines, all 288 rows shown at 1.5×. Not yet in the
-  port. Earlier result: **480 unique lines failed** (red screen = missed lines), so
+  port. `proto_480` (core 1 converting via pico_lib's line queue) still fails (8% busy, most
+  lines missed; cause unknown), so a 480 port should use the **direct path** (core 0 converts). Earlier result: **480 unique lines failed** (red screen = missed lines), so
   **a PiZero port uses the line-doubled mode**: 224×288 shrunk to 187×240 source pixels = 374×480.
   Dropping 1 in 6 rows/columns loses 1-pixel lines (Pac-Man walls). A per-channel-max scaler
   over the 2×2 covered source pixels (DSP `usub8`/`sel`) fixed that but **overloaded core 1**
