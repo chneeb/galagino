@@ -38,10 +38,8 @@ emulation code from `../galagino` and the board-independent menu, rendering and 
 - **Red flicker gone** after the flash fix (confirmed).
 - **Bottom line / thin maze walls missing:** not overscan (the border made no difference). The
   6:5 shrink drops every 6th row and column, which removes 1-pixel lines. The max-combining scaler
-  fixed that in principle but caused **lots of red flicker** (core 1 too slow), so it's parked
-  behind `DVI_SCALE_MAX` and the dropping scaler stays the default. A later attempt would need a
-  cheaper formulation, e.g. combining only rows (not columns), a 16-bit-domain max, or moving
-  part of the work to core 0. Alternating the dropped rows/columns per frame
+  fixed that in principle but caused **lots of red flicker** (core 1 too slow) and was removed
+  (see commit `9679606`). Alternating the dropped rows/columns per frame
   (`DVI_ALTERNATE_DROP`) is being tried instead (untested).
 - **Switchable 480-line layouts** (DOUBLE/WIDE/ASPECT, direct path) built, untested. This
   replaces the border setting (didn't help) and the parked max-combining scaler (can't work on

@@ -117,9 +117,9 @@ when a buffer is queued.
   **a PiZero port uses the line-doubled mode**: 224×288 shrunk to 187×240 source pixels = 374×480.
   Dropping 1 in 6 rows/columns loses 1-pixel lines (Pac-Man walls). A per-channel-max scaler
   over the 2×2 covered source pixels (DSP `usub8`/`sel`) fixed that but **overloaded core 1**
-  (lots of red flicker), so it's **parked** behind `DVI_SCALE_MAX`; dropping stays the default,
-  now with `DVI_ALTERNATE_DROP`: odd/even frames drop different rows/columns (phase 0 vs +0.6),
-  so every one shows at least at 30 Hz. Free for core 1; untested.
+  (lots of red flicker) and was removed (git history, commit `9679606`). `DVI_ALTERNATE_DROP`
+  (odd/even frames drop different rows/columns) works and is free; the 480-line WIDE/ASPECT
+  layouts avoid dropping rows altogether.
 - **Forks worth porting instead of upstream** (details in `plans/rp2350-port.md` §6):
   `VirtualClaudioBoy/GalaginoPlus` (48 games; 6502/6809/6803 cores; `machineBase` class per game;
   platform layer split into `emulation/{video,audio,input,nunchuck}.cpp`) and `speckhoiler/galagino`
